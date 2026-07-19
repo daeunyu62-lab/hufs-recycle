@@ -5,7 +5,7 @@
 ## 담당
 
 - Backend: 김재웅
-- Frontend: 팀원
+- Frontend: 다은
 
 ## 프로젝트 구조
 
