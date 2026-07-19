@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import BeforeValidator, Field
+from pydantic import BeforeValidator, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -19,7 +19,7 @@ AllowedOrigins = Annotated[
 
 
 class Settings(BaseSettings):
-    app_name: str = "HUFS Eco Mileage API"
+    app_name: str = "HUFS Recycle API"
     app_env: str = "development"
     debug: bool = True
     api_v1_prefix: str = "/api/v1"
@@ -50,6 +50,53 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     supabase_storage_bucket: str = "submission-images"
 
+    seed_admin_email: str = ""
+    seed_admin_password: str = ""
+    seed_admin_name: str = "관리자"
+    seed_admin_student_number: str = "ADMIN001"
+
+    seed_location_name: str = "교내 테스트 분리수거함"
+    seed_location_description: str = "개발 테스트 장소"
+    seed_location_latitude: str = ""
+    seed_location_longitude: str = ""
+    seed_location_allowed_radius_m: int = 30
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+psycopg://", 1)
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+psycopg://", 1)
+        return value
+
+    @model_validator(mode="after")
+    def validate_production_settings(self) -> "Settings":
+        if self.app_env.lower() not in {"production", "prod"}:
+            return self
+
+        if self.database_url.startswith("sqlite"):
+            raise ValueError("SQLite cannot be used in production.")
+        if self.storage_backend == "local":
+            raise ValueError("Local storage cannot be used in production.")
+        if self.storage_backend == "supabase":
+            missing_supabase_values = [
+                name
+                for name, value in {
+                    "SUPABASE_URL": self.supabase_url,
+                    "SUPABASE_SERVICE_ROLE_KEY": self.supabase_service_role_key,
+                    "SUPABASE_STORAGE_BUCKET": self.supabase_storage_bucket,
+                }.items()
+                if not value
+            ]
+            if missing_supabase_values:
+                joined_names = ", ".join(missing_supabase_values)
+                raise ValueError(
+                    f"Missing production Supabase settings: {joined_names}"
+                )
+
+        return self
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -61,4 +108,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

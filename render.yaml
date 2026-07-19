@@ -1,0 +1,77 @@
+services:
+  - type: web
+    name: hufs-recycle-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths:
+        - backend/**
+        - render.yaml
+    envVars:
+      - key: APP_NAME
+        value: HUFS Recycle API
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: API_V1_PREFIX
+        value: /api/v1
+      - key: BUSINESS_TIMEZONE
+        value: Asia/Seoul
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "120"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: DAILY_SUBMISSION_LIMIT
+        value: "2"
+      - key: SUBMISSION_COOLDOWN_MINUTES
+        value: "60"
+      - key: POINTS_PER_APPROVAL
+        value: "1"
+      - key: DEFAULT_ALLOWED_RADIUS_M
+        value: "30"
+      - key: MAX_GPS_ACCURACY_M
+        value: "100"
+      - key: MAX_IMAGE_SIZE_MB
+        value: "5"
+      - key: SIGNED_IMAGE_URL_EXPIRE_SECONDS
+        value: "300"
+      - key: STORAGE_BACKEND
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: submission-images
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_ADMIN_NAME
+        value: 관리자
+      - key: SEED_ADMIN_STUDENT_NUMBER
+        value: ADMIN001
+      - key: SEED_LOCATION_NAME
+        sync: false
+      - key: SEED_LOCATION_DESCRIPTION
+        sync: false
+      - key: SEED_LOCATION_LATITUDE
+        sync: false
+      - key: SEED_LOCATION_LONGITUDE
+        sync: false
+      - key: SEED_LOCATION_ALLOWED_RADIUS_M
+        value: "30"
+

@@ -1,6 +1,8 @@
 from fastapi import APIRouter
+from sqlalchemy import text
 
 from app.core.config import get_settings
+from app.db.session import engine
 
 router = APIRouter(tags=["health"])
 
@@ -11,6 +13,15 @@ def read_health() -> dict[str, str]:
     return {
         "status": "ok",
         "service": settings.app_name,
-        "environment": settings.app_env,
     }
 
+
+@router.get("/health/db")
+def read_database_health() -> dict[str, str]:
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1"))
+
+    return {
+        "status": "ok",
+        "database": "ok",
+    }
