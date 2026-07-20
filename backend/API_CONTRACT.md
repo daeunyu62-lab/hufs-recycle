@@ -240,7 +240,8 @@ await fetch(`${API_BASE_URL}/submissions`, {
 
 ### `GET /users/me/submissions`
 
-내 제출 목록 조회.
+내 제출 목록 조회. 각 항목에는 화면 표시용 `location_code`와 `location_name`이
+포함된다.
 
 ### `GET /submissions/{submission_id}`
 
@@ -293,6 +294,9 @@ GPS 좌표를 QR에 저장하지 않는다. QR 스캔 후 프론트엔드가 휴
 - `submitted_to`
 - `page`
 - `page_size`
+
+각 항목에는 검토 화면 표시용 `user_email`, `user_student_number`, `user_name`,
+`location_code`, `location_name`이 포함된다.
 
 ### `GET /admin/submissions/{submission_id}`
 

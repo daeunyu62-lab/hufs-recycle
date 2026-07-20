@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from fastapi import status
 from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.core.errors import AppHTTPException, ErrorCode
@@ -218,7 +218,11 @@ def _paginate_admin_submissions(
     )
     items = list(
         db.scalars(
-            query.order_by(Submission.submitted_at.desc())
+            query.options(
+                selectinload(Submission.location),
+                selectinload(Submission.user),
+            )
+            .order_by(Submission.submitted_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

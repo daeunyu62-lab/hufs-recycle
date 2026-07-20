@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from fastapi import UploadFile, status
 from sqlalchemy import Select, func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.core.errors import AppError, AppHTTPException, ErrorCode
@@ -334,7 +334,8 @@ def _paginate_submissions(
     )
     items = list(
         db.scalars(
-            query.order_by(Submission.submitted_at.desc())
+            query.options(selectinload(Submission.location))
+            .order_by(Submission.submitted_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

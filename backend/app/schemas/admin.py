@@ -1,19 +1,28 @@
 from pydantic import BaseModel, Field
 
 from app.schemas.location import AdminLocationPublic
-from app.schemas.submission import SubmissionListResponse, SubmissionPublic
+from app.schemas.submission import SubmissionPublic
 
 
 class RejectSubmissionRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
-class AdminSubmissionDetail(SubmissionPublic):
+class AdminSubmissionPublic(SubmissionPublic):
+    user_email: str
+    user_student_number: str
+    user_name: str
+
+
+class AdminSubmissionDetail(AdminSubmissionPublic):
     image_url: str | None = None
 
 
-class AdminSubmissionListResponse(SubmissionListResponse):
-    pass
+class AdminSubmissionListResponse(BaseModel):
+    items: list[AdminSubmissionPublic]
+    page: int
+    page_size: int
+    total: int
 
 
 class AdminStatisticsResponse(BaseModel):

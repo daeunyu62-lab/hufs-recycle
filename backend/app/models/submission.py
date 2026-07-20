@@ -59,3 +59,23 @@ class Submission(TimestampMixin, Base):
     )
     location = relationship("DisposalLocation", back_populates="submissions")
     point_transactions = relationship("PointTransaction", back_populates="submission")
+
+    @property
+    def location_code(self) -> str:
+        return self.location.code
+
+    @property
+    def location_name(self) -> str:
+        return self.location.name
+
+    @property
+    def user_email(self) -> str:
+        return self.user.email
+
+    @property
+    def user_student_number(self) -> str:
+        return self.user.student_number
+
+    @property
+    def user_name(self) -> str:
+        return self.user.name

@@ -131,6 +131,38 @@ def test_admin_approval_awards_points_once(
     assert len(point_transactions) == 1
 
 
+def test_admin_submission_list_includes_user_and_location_labels(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user = create_user(db_session)
+    admin = create_user(
+        db_session,
+        email="admin-list@hufs.ac.kr",
+        student_number="ADMINLIST",
+        role=UserRole.ADMIN,
+    )
+    location = create_location(db_session)
+    submission = create_submission(
+        db_session,
+        user_id=user.id,
+        location_id=location.id,
+    )
+
+    response = client.get(
+        "/api/v1/admin/submissions",
+        headers=auth_headers(admin.id),
+    )
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["id"] == submission.id
+    assert item["user_email"] == user.email
+    assert item["user_student_number"] == user.student_number
+    assert item["location_code"] == location.code
+    assert item["location_name"] == location.name
+
+
 def test_admin_rejection_does_not_award_points(
     client: TestClient,
     db_session: Session,

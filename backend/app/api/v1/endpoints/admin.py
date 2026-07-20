@@ -12,6 +12,7 @@ from app.schemas.admin import (
     AdminStatisticsResponse,
     AdminSubmissionDetail,
     AdminSubmissionListResponse,
+    AdminSubmissionPublic,
     RejectSubmissionRequest,
 )
 from app.schemas.location import (
@@ -20,7 +21,6 @@ from app.schemas.location import (
     AdminLocationUpdate,
     QrTokenResponse,
 )
-from app.schemas.submission import SubmissionPublic
 from app.services.admin_service import (
     approve_submission,
     get_admin_statistics,
@@ -149,14 +149,17 @@ def read_admin_submission(
     db: Annotated[Session, Depends(get_db)],
 ) -> AdminSubmissionDetail:
     submission = get_submission_for_admin(db, submission_id)
-    public = SubmissionPublic.model_validate(submission).model_dump()
+    public = AdminSubmissionPublic.model_validate(submission).model_dump()
     return AdminSubmissionDetail(
         **public,
         image_url=get_storage_service().create_signed_url(submission.image_path),
     )
 
 
-@router.patch("/submissions/{submission_id}/approve", response_model=SubmissionPublic)
+@router.patch(
+    "/submissions/{submission_id}/approve",
+    response_model=AdminSubmissionPublic,
+)
 def approve_admin_submission(
     submission_id: int,
     admin: Annotated[User, Depends(get_current_admin)],
@@ -165,7 +168,10 @@ def approve_admin_submission(
     return approve_submission(db, submission_id, admin)
 
 
-@router.patch("/submissions/{submission_id}/reject", response_model=SubmissionPublic)
+@router.patch(
+    "/submissions/{submission_id}/reject",
+    response_model=AdminSubmissionPublic,
+)
 def reject_admin_submission(
     submission_id: int,
     request: RejectSubmissionRequest,

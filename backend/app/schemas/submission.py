@@ -19,6 +19,8 @@ class SubmissionPublic(BaseModel):
     id: int
     user_id: int
     location_id: int
+    location_code: str
+    location_name: str
     image_path: str
     latitude: float
     longitude: float
