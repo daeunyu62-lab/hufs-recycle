@@ -35,6 +35,8 @@
 
 - `EMAIL_ALREADY_EXISTS`
 - `STUDENT_NUMBER_ALREADY_EXISTS`
+- `INVALID_EMAIL_DOMAIN`
+- `EMAIL_NOT_VERIFIED`
 - `INVALID_CREDENTIALS`
 - `INACTIVE_USER`
 - `INVALID_TOKEN`
@@ -66,7 +68,8 @@
 ```json
 {
   "status": "ok",
-  "service": "HUFS Recycle API"
+  "service": "HUFS Recycle API",
+  "environment": "development"
 }
 ```
 
@@ -93,7 +96,7 @@
 
 ```json
 {
-  "email": "student@example.com",
+  "email": "student@hufs.ac.kr",
   "student_number": "202100000",
   "name": "홍길동",
   "password": "safe-password"
@@ -104,9 +107,50 @@
 
 - 회원가입 기본 권한은 항상 `USER`
 - 공개 API에서 `ADMIN` 지정 불가
+- `ALLOWED_EMAIL_DOMAINS`에 등록된 도메인만 가입 가능
 - 이메일은 lowercase로 저장
 - 이메일과 학번 중복 불가
 - 비밀번호 원문 저장 금지
+- 개발/테스트 환경에서는 이메일 발송 대신 `email_verification_token`을 응답에 포함
+
+응답:
+
+```json
+{
+  "user": {
+    "id": 1,
+    "email": "student@hufs.ac.kr",
+    "student_number": "202100000",
+    "name": "홍길동",
+    "role": "USER",
+    "is_active": true,
+    "is_email_verified": false
+  },
+  "email_verification_required": true,
+  "email_verification_token": "DEV_ONLY_TOKEN"
+}
+```
+
+### `POST /auth/verify-email`
+
+인증: 불필요
+
+요청:
+
+```json
+{
+  "token": "DEV_ONLY_TOKEN"
+}
+```
+
+응답:
+
+```json
+{
+  "status": "ok",
+  "message": "이메일 인증이 완료되었습니다."
+}
+```
 
 ### `POST /auth/login`
 
@@ -116,7 +160,7 @@
 
 ```json
 {
-  "email": "student@example.com",
+  "email": "student@hufs.ac.kr",
   "password": "safe-password"
 }
 ```
@@ -139,11 +183,12 @@
 ```json
 {
   "id": 1,
-  "email": "student@example.com",
+  "email": "student@hufs.ac.kr",
   "student_number": "202100000",
   "name": "홍길동",
   "role": "USER",
-  "is_active": true
+  "is_active": true,
+  "email_verified_at": "2026-07-20T10:00:00Z"
 }
 ```
 
@@ -250,6 +295,18 @@
 
 모든 관리자 API 인증: `ADMIN`
 
+### `GET /admin/locations`
+
+관리자용 분리수거함 목록 조회. QR 토큰과 좌표를 포함한다.
+
+### `POST /admin/locations`
+
+관리자용 분리수거함 생성. QR 토큰은 서버에서 생성한다.
+
+### `PATCH /admin/locations/{location_id}`
+
+관리자용 분리수거함 이름, 설명, 좌표, 허용 반경, 활성 상태 수정.
+
 ### `GET /admin/submissions`
 
 쿼리:
@@ -323,4 +380,3 @@
 ```
 
 잔액은 `point_transactions.amount` 합계로 계산한다.
-

@@ -1,0 +1,108 @@
+from app.models import PointTransaction, SubmissionStatus, UserRole
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from tests.factories import (
+    auth_headers,
+    create_location,
+    create_submission,
+    create_user,
+)
+
+
+def test_user_cannot_access_admin_routes(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user = create_user(db_session)
+
+    response = client.get("/api/v1/admin/submissions", headers=auth_headers(user.id))
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "ADMIN_REQUIRED"
+
+
+def test_admin_approval_awards_points_once(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user = create_user(db_session)
+    admin = create_user(
+        db_session,
+        email="admin@hufs.ac.kr",
+        student_number="ADMIN001",
+        role=UserRole.ADMIN,
+    )
+    location = create_location(db_session)
+    submission = create_submission(
+        db_session,
+        user_id=user.id,
+        location_id=location.id,
+    )
+
+    approve_response = client.patch(
+        f"/api/v1/admin/submissions/{submission.id}/approve",
+        headers=auth_headers(admin.id),
+    )
+
+    assert approve_response.status_code == 200
+    assert approve_response.json()["status"] == "APPROVED"
+
+    point_transactions = db_session.scalars(select(PointTransaction)).all()
+    assert len(point_transactions) == 1
+    assert point_transactions[0].amount == 1
+    assert point_transactions[0].submission_id == submission.id
+
+    points_response = client.get(
+        "/api/v1/users/me/points",
+        headers=auth_headers(user.id),
+    )
+    assert points_response.status_code == 200
+    assert points_response.json()["balance"] == 1
+
+    duplicate_response = client.patch(
+        f"/api/v1/admin/submissions/{submission.id}/approve",
+        headers=auth_headers(admin.id),
+    )
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["detail"]["code"] == "ALREADY_REVIEWED"
+
+    point_transactions = db_session.scalars(select(PointTransaction)).all()
+    assert len(point_transactions) == 1
+
+
+def test_admin_rejection_does_not_award_points(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user = create_user(db_session)
+    admin = create_user(
+        db_session,
+        email="admin-reject@hufs.ac.kr",
+        student_number="ADMIN002",
+        role=UserRole.ADMIN,
+    )
+    location = create_location(db_session)
+    submission = create_submission(
+        db_session,
+        user_id=user.id,
+        location_id=location.id,
+    )
+
+    reject_response = client.patch(
+        f"/api/v1/admin/submissions/{submission.id}/reject",
+        headers=auth_headers(admin.id),
+        json={"reason": "사진에서 분리배출 여부를 확인하기 어렵습니다."},
+    )
+
+    assert reject_response.status_code == 200
+    assert reject_response.json()["status"] == "REJECTED"
+    assert reject_response.json()["rejection_reason"] == (
+        "사진에서 분리배출 여부를 확인하기 어렵습니다."
+    )
+
+    reviewed_submission = db_session.get(type(submission), submission.id)
+    assert reviewed_submission is not None
+    assert reviewed_submission.status == SubmissionStatus.REJECTED
+    assert db_session.scalars(select(PointTransaction)).all() == []

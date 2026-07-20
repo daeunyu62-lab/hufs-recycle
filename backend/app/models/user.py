@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, Enum, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -14,6 +16,8 @@ class User(TimestampMixin, Base):
     student_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
     hashed_password: Mapped[str] = mapped_column(String(255))
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    email_verification_token_hash: Mapped[str | None] = mapped_column(String(64))
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role"),
         default=UserRole.USER,
@@ -35,4 +39,3 @@ class User(TimestampMixin, Base):
         "PointTransaction",
         back_populates="user",
     )
-

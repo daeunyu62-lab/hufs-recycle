@@ -208,4 +208,3 @@ def downgrade() -> None:
         point_transaction_type.drop(bind, checkfirst=True)
         submission_status.drop(bind, checkfirst=True)
         user_role.drop(bind, checkfirst=True)
-

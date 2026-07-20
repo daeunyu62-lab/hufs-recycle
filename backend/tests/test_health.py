@@ -8,6 +8,7 @@ def test_health_endpoint(client: TestClient) -> None:
     assert response.json() == {
         "status": "ok",
         "service": "HUFS Recycle API",
+        "environment": "test",
     }
 
 

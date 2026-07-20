@@ -1,3 +1,52 @@
+from enum import StrEnum
+from typing import Any
+
+from fastapi import HTTPException
+
+
+class ErrorCode(StrEnum):
+    EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS"
+    STUDENT_NUMBER_ALREADY_EXISTS = "STUDENT_NUMBER_ALREADY_EXISTS"
+    INVALID_EMAIL_DOMAIN = "INVALID_EMAIL_DOMAIN"
+    EMAIL_NOT_VERIFIED = "EMAIL_NOT_VERIFIED"
+    INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
+    INACTIVE_USER = "INACTIVE_USER"
+    INVALID_TOKEN = "INVALID_TOKEN"
+    ADMIN_REQUIRED = "ADMIN_REQUIRED"
+    INVALID_QR_TOKEN = "INVALID_QR_TOKEN"
+    INACTIVE_LOCATION = "INACTIVE_LOCATION"
+    INVALID_COORDINATES = "INVALID_COORDINATES"
+    GPS_ACCURACY_TOO_LOW = "GPS_ACCURACY_TOO_LOW"
+    LOCATION_TOO_FAR = "LOCATION_TOO_FAR"
+    DAILY_LIMIT_EXCEEDED = "DAILY_LIMIT_EXCEEDED"
+    COOLDOWN_NOT_FINISHED = "COOLDOWN_NOT_FINISHED"
+    INVALID_IMAGE_TYPE = "INVALID_IMAGE_TYPE"
+    IMAGE_TOO_LARGE = "IMAGE_TOO_LARGE"
+    STORAGE_ERROR = "STORAGE_ERROR"
+    SUBMISSION_NOT_FOUND = "SUBMISSION_NOT_FOUND"
+    FORBIDDEN_SUBMISSION_ACCESS = "FORBIDDEN_SUBMISSION_ACCESS"
+    ALREADY_REVIEWED = "ALREADY_REVIEWED"
+    INVALID_REJECTION_REASON = "INVALID_REJECTION_REASON"
+    POINT_TRANSACTION_CONFLICT = "POINT_TRANSACTION_CONFLICT"
+
+
 class AppError(Exception):
     """Base exception for predictable application errors."""
 
+
+class AppHTTPException(HTTPException):
+    def __init__(
+        self,
+        status_code: int,
+        code: ErrorCode,
+        message: str,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            status_code=status_code,
+            detail={
+                "code": code.value,
+                "message": message,
+                "context": context or {},
+            },
+        )

@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -25,8 +28,17 @@ def create_app() -> FastAPI:
     )
 
     application.include_router(api_router, prefix=settings.api_v1_prefix)
+
+    if settings.storage_backend == "local":
+        upload_dir = Path(settings.local_upload_dir)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        application.mount(
+            "/uploads",
+            StaticFiles(directory=upload_dir),
+            name="uploads",
+        )
+
     return application
 
 
 app = create_app()
-

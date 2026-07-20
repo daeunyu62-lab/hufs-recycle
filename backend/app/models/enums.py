@@ -16,4 +16,3 @@ class PointTransactionType(StrEnum):
     EARN = "EARN"
     USE = "USE"
     CANCEL = "CANCEL"
-

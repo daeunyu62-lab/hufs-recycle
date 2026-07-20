@@ -16,6 +16,11 @@ AllowedOrigins = Annotated[
     NoDecode,
     BeforeValidator(parse_allowed_origins),
 ]
+AllowedEmailDomains = Annotated[
+    list[str],
+    NoDecode,
+    BeforeValidator(parse_allowed_origins),
+]
 
 
 class Settings(BaseSettings):
@@ -30,6 +35,9 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "replace-with-a-long-random-secret"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 120
+    allowed_email_domains: AllowedEmailDomains = Field(
+        default_factory=lambda: ["hufs.ac.kr"]
+    )
 
     allowed_origins: AllowedOrigins = Field(
         default_factory=lambda: ["http://localhost:3000"]

@@ -1,8 +1,11 @@
-from fastapi import APIRouter
-from sqlalchemy import text
+from typing import Annotated
 
+from fastapi import APIRouter, Depends
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.api.dependencies import get_db
 from app.core.config import get_settings
-from app.db.session import engine
 
 router = APIRouter(tags=["health"])
 
@@ -13,13 +16,13 @@ def read_health() -> dict[str, str]:
     return {
         "status": "ok",
         "service": settings.app_name,
+        "environment": settings.app_env,
     }
 
 
 @router.get("/health/db")
-def read_database_health() -> dict[str, str]:
-    with engine.connect() as connection:
-        connection.execute(text("SELECT 1"))
+def read_database_health(db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+    db.execute(text("SELECT 1"))
 
     return {
         "status": "ok",

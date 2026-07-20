@@ -143,6 +143,49 @@ button:disabled {
   padding: 18px;
 }
 
+.form-section {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.auth-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid #e3c995;
+  border-radius: 999px;
+  padding: 0 10px;
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.auth-state.ready {
+  border-color: #a9d7bd;
+  color: var(--primary-strong);
+}
+
+.auth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .field {
   display: grid;
   gap: 8px;
@@ -312,6 +355,10 @@ button:disabled {
   }
 
   .location-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-grid {
     grid-template-columns: 1fr;
   }
 }

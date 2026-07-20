@@ -4,6 +4,7 @@ export const API_BASE_URL =
 export type HealthResponse = {
   status: string;
   service: string;
+  environment: string;
 };
 
 export async function fetchHealth(): Promise<HealthResponse> {
@@ -17,4 +18,3 @@ export async function fetchHealth(): Promise<HealthResponse> {
 
   return response.json() as Promise<HealthResponse>;
 }
-

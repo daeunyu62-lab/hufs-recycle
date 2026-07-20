@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
@@ -25,6 +26,15 @@ def seed_admin() -> None:
     with SessionLocal() as db:
         existing_user = db.scalar(select(User).where(User.email == email))
         if existing_user is not None:
+            if (
+                existing_user.role == UserRole.ADMIN
+                and existing_user.email_verified_at is None
+            ):
+                existing_user.email_verified_at = datetime.now(UTC)
+                existing_user.email_verification_token_hash = None
+                db.commit()
+                print(f"Admin seed verified existing admin: {email}")
+                return
             print(f"Admin seed skipped: user already exists ({email}).")
             return
 
@@ -44,6 +54,7 @@ def seed_admin() -> None:
             hashed_password=hash_password(settings.seed_admin_password),
             role=UserRole.ADMIN,
             is_active=True,
+            email_verified_at=datetime.now(UTC),
         )
         db.add(admin)
         db.commit()

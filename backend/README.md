@@ -54,6 +54,7 @@ Render production variables:
 - `JWT_SECRET_KEY`
 - `JWT_ALGORITHM=HS256`
 - `ACCESS_TOKEN_EXPIRE_MINUTES=120`
+- `ALLOWED_EMAIL_DOMAINS=hufs.ac.kr`
 - `ALLOWED_ORIGINS`
 - `DAILY_SUBMISSION_LIMIT=2`
 - `SUBMISSION_COOLDOWN_MINUTES=60`
@@ -100,6 +101,9 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
 
 ## Security Notes
 
+- Development and test signups return the email verification token in the API
+  response. Production should wire this token to an email delivery provider
+  before exposing registration publicly.
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` to the frontend.
 - Never commit `.env`, database passwords, JWT secrets, or API keys.
 - Store uploaded production images in Supabase private Storage, not Render local disk.

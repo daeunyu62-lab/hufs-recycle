@@ -32,6 +32,8 @@ services:
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "120"
+      - key: ALLOWED_EMAIL_DOMAINS
+        value: hufs.ac.kr
       - key: ALLOWED_ORIGINS
         sync: false
       - key: DAILY_SUBMISSION_LIMIT
@@ -74,4 +76,3 @@ services:
         sync: false
       - key: SEED_LOCATION_ALLOWED_RADIUS_M
         value: "30"
-

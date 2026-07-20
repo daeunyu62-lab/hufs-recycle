@@ -32,4 +32,3 @@ class DisposalLocation(TimestampMixin, Base):
     )
 
     submissions = relationship("Submission", back_populates="location")
-
