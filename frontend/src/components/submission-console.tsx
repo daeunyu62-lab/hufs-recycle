@@ -1,14 +1,34 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_BASE_URL, fetchHealth } from "@/lib/api";
+
+const SESSION_STORAGE_KEY = "hufs-recycle-access-token";
+const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
+const maxImageSizeMb = 5;
 
 type LocationState = {
   latitude: number;
   longitude: number;
   accuracy: number;
+};
+
+type UserProfile = {
+  id: number;
+  email: string;
+  student_number: string;
+  name: string;
+  mileage_balance: number;
+};
+
+type SubmissionResult = {
+  submission_id: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  points_awarded: number;
+  mileage_balance: number;
+  message: string;
 };
 
 type ApiErrorPayload = {
@@ -18,31 +38,39 @@ type ApiErrorPayload = {
   };
 };
 
-const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
-const maxImageSizeMb = 5;
+class ApiRequestError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.code = code;
+  }
+}
+
+async function readApiResponse<T>(response: Response, fallback: string): Promise<T> {
+  const data = (await response.json().catch(() => null)) as ApiErrorPayload | null;
+  if (!response.ok) {
+    throw new ApiRequestError(
+      data?.detail?.message ?? fallback,
+      data?.detail?.code,
+    );
+  }
+  return data as T;
+}
 
 function readInitialQueryValues() {
   if (typeof window === "undefined") {
-    return {
-      binId: "",
-      qrToken: "",
-      verificationToken: "",
-    };
+    return { binId: "", qrToken: "", verificationToken: "" };
   }
 
   const params = new URLSearchParams(window.location.search);
-  if (window.location.pathname.includes("verify-email")) {
-    return {
-      binId: "",
-      qrToken: "",
-      verificationToken: params.get("token") ?? "",
-    };
-  }
-
   return {
     binId: params.get("bin_id") ?? "",
     qrToken: params.get("token") ?? params.get("qr_token") ?? "",
-    verificationToken: "",
+    verificationToken: window.location.pathname.includes("verify-email")
+      ? (params.get("token") ?? "")
+      : "",
   };
 }
 
@@ -50,19 +78,16 @@ export function SubmissionConsole() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [initialQuery] = useState(readInitialQueryValues);
   const [apiStatus, setApiStatus] = useState("확인 중");
-  const [email, setEmail] = useState("");
+  const [emailId, setEmailId] = useState("");
   const [studentNumber, setStudentNumber] = useState("");
-  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [verificationToken, setVerificationToken] = useState(
-    initialQuery.verificationToken,
-  );
   const [accessToken, setAccessToken] = useState("");
-  const [binId, setBinId] = useState(initialQuery.binId);
-  const [qrToken, setQrToken] = useState(initialQuery.qrToken);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [location, setLocation] = useState<LocationState | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [submissionResult, setSubmissionResult] =
+    useState<SubmissionResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"info" | "error">("info");
   const [isAuthPending, setIsAuthPending] = useState(false);
@@ -71,11 +96,58 @@ export function SubmissionConsole() {
   const [isLocating, setIsLocating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const binId = initialQuery.binId;
+  const qrToken = initialQuery.qrToken;
+  const hasQr = Boolean(binId && qrToken);
+
   useEffect(() => {
     fetchHealth()
       .then((health) => setApiStatus(`${health.service} 연결됨`))
       .catch(() => setApiStatus("API 연결 대기"));
   }, []);
+
+  useEffect(() => {
+    const storedToken = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!storedToken) {
+      return;
+    }
+
+    void fetch(`${API_BASE_URL}/users/me`, {
+      headers: { Authorization: `Bearer ${storedToken}` },
+    })
+      .then((response) => readApiResponse<UserProfile>(response, "로그인 복원 실패"))
+      .then((profile) => {
+        setAccessToken(storedToken);
+        setCurrentUser(profile);
+        setEmailId(profile.email.split("@")[0]);
+        setStudentNumber(profile.student_number);
+      })
+      .catch(() => window.localStorage.removeItem(SESSION_STORAGE_KEY));
+  }, []);
+
+  useEffect(() => {
+    const token = initialQuery.verificationToken;
+    if (!token) {
+      return;
+    }
+
+    void fetch(`${API_BASE_URL}/auth/verify-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    })
+      .then((response) =>
+        readApiResponse<{ message: string }>(response, "이메일 인증에 실패했습니다."),
+      )
+      .then(() => {
+        setMessageType("info");
+        setMessage("외대 이메일 인증이 완료되었습니다.");
+      })
+      .catch((error) => {
+        setMessageType("error");
+        setMessage(error instanceof Error ? error.message : "이메일 인증 실패");
+      });
+  }, [initialQuery.verificationToken]);
 
   useEffect(() => {
     return () => {
@@ -86,34 +158,30 @@ export function SubmissionConsole() {
   }, [previewUrl]);
 
   const canSubmit = Boolean(
-    accessToken &&
-      binId.trim() &&
-      qrToken.trim() &&
-      location &&
-      photo &&
-      canCapture &&
-      !isSubmitting,
+    accessToken && hasQr && location && photo && canCapture && !isSubmitting,
   );
 
   const photoMeta = useMemo(() => {
     if (!photo) {
-      return "선택된 사진 없음";
+      return "촬영된 사진 없음";
     }
-
     return `${photo.type || "unknown"} · ${(photo.size / 1024 / 1024).toFixed(2)}MB`;
   }, [photo]);
 
-  function apiErrorMessage(payload: ApiErrorPayload | null, fallback: string) {
-    return payload?.detail?.message ?? fallback;
+  function accountEmail() {
+    return `${emailId.trim().toLowerCase()}@hufs.ac.kr`;
   }
 
-  function resetQrVerification() {
-    setCanCapture(false);
-    setPhoto(null);
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
+  async function login(email: string) {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    return readApiResponse<{ access_token: string }>(
+      response,
+      "로그인에 실패했습니다.",
+    );
   }
 
   async function verifyEmailToken(token: string) {
@@ -122,203 +190,140 @@ export function SubmissionConsole() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
     });
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      throw new Error(apiErrorMessage(data, "이메일 인증에 실패했습니다."));
-    }
-
-    return data;
+    await readApiResponse(response, "외대 이메일 인증에 실패했습니다.");
   }
 
-  async function loginWithCredentials() {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+  async function registerAndLogin(email: string) {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({
+        email,
+        student_number: studentNumber.trim(),
+        name: `외대 학생 ${studentNumber.trim()}`,
+        password,
+      }),
     });
-    const data = await response.json().catch(() => null);
 
-    if (!response.ok) {
-      const message =
-        data?.detail?.code === "EMAIL_NOT_VERIFIED"
-          ? "이메일 인증이 필요합니다. 인증 토큰 재발급을 눌러 주세요."
-          : apiErrorMessage(data, "로그인에 실패했습니다.");
-      throw new Error(message);
+    let data: { email_verification_token: string | null };
+    try {
+      data = await readApiResponse(response, "계정 등록에 실패했습니다.");
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.code === "EMAIL_ALREADY_EXISTS") {
+        throw new Error("이미 등록된 이메일입니다. 비밀번호를 확인해 주세요.");
+      }
+      if (
+        error instanceof ApiRequestError &&
+        error.code === "STUDENT_NUMBER_ALREADY_EXISTS"
+      ) {
+        throw new Error("이미 등록된 학번입니다. 이메일을 확인해 주세요.");
+      }
+      throw error;
     }
 
-    return data.access_token as string;
+    if (!data.email_verification_token) {
+      throw new Error("외대 이메일로 발송된 인증 링크를 먼저 확인해 주세요.");
+    }
+
+    await verifyEmailToken(data.email_verification_token);
+    return login(email);
   }
 
-  async function verifyAndLogin(token: string) {
-    await verifyEmailToken(token);
-    const tokenResponse = await loginWithCredentials();
-    setVerificationToken("");
-    setAccessToken(tokenResponse);
+  async function recoverAndLogin(email: string) {
+    const response = await fetch(`${API_BASE_URL}/auth/resend-verification`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await readApiResponse<{ email_verification_token: string | null }>(
+      response,
+      "이메일 인증을 다시 요청하지 못했습니다.",
+    );
+
+    if (!data.email_verification_token) {
+      throw new Error("외대 이메일로 발송된 인증 링크를 먼저 확인해 주세요.");
+    }
+
+    await verifyEmailToken(data.email_verification_token);
+    return login(email);
   }
 
-  async function handleRegister() {
-    if (!email || !studentNumber || !name || !password) {
+  async function handleAccountStart() {
+    if (!emailId.trim() || !studentNumber.trim() || password.length < 8) {
       setMessageType("error");
-      setMessage("이메일, 학번, 이름, 비밀번호를 입력해야 합니다.");
+      setMessage("외대 이메일, 학번, 8자 이상의 비밀번호를 입력해 주세요.");
       return;
     }
 
     setIsAuthPending(true);
     setMessageType("info");
-    setMessage("회원가입을 요청하고 있습니다.");
+    setMessage("외대 계정을 확인하고 있습니다.");
+    const email = accountEmail();
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          student_number: studentNumber,
-          name,
-          password,
-        }),
+      let tokenResponse: { access_token: string };
+      try {
+        tokenResponse = await login(email);
+      } catch (error) {
+        if (!(error instanceof ApiRequestError)) {
+          throw error;
+        }
+        if (error.code === "EMAIL_NOT_VERIFIED") {
+          tokenResponse = await recoverAndLogin(email);
+        } else if (error.code === "INVALID_CREDENTIALS") {
+          tokenResponse = await registerAndLogin(email);
+        } else {
+          throw error;
+        }
+      }
+
+      const profileResponse = await fetch(`${API_BASE_URL}/users/me`, {
+        headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
       });
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(data, "회원가입에 실패했습니다."));
+      const profile = await readApiResponse<UserProfile>(
+        profileResponse,
+        "사용자 정보를 확인하지 못했습니다.",
+      );
+      if (profile.student_number !== studentNumber.trim()) {
+        throw new Error("입력한 학번이 등록된 계정 정보와 일치하지 않습니다.");
       }
 
-      const token = data.email_verification_token ?? "";
-      setVerificationToken(token);
-      setAccessToken("");
-
-      if (token) {
-        await verifyAndLogin(token);
-        setMessageType("info");
-        setMessage("회원가입, 이메일 인증, 로그인이 완료되었습니다.");
-      } else {
-        setMessageType("info");
-        setMessage("회원가입이 완료되었습니다. 받은 이메일의 인증 링크를 확인해 주세요.");
-      }
-    } catch (error) {
-      setMessageType("error");
-      setMessage(error instanceof Error ? error.message : "회원가입에 실패했습니다.");
-    } finally {
-      setIsAuthPending(false);
-    }
-  }
-
-  async function handleVerifyEmail() {
-    if (!verificationToken.trim()) {
-      setMessageType("error");
-      setMessage("이메일 인증 토큰을 입력해야 합니다.");
-      return;
-    }
-
-    setIsAuthPending(true);
-    setMessageType("info");
-    setMessage("이메일 인증을 확인하고 있습니다.");
-
-    try {
-      const data = await verifyEmailToken(verificationToken.trim());
-      if (email && password) {
-        const tokenResponse = await loginWithCredentials();
-        setAccessToken(tokenResponse);
-      }
-      setVerificationToken("");
+      window.localStorage.setItem(SESSION_STORAGE_KEY, tokenResponse.access_token);
+      setAccessToken(tokenResponse.access_token);
+      setCurrentUser(profile);
+      setPassword("");
       setMessageType("info");
-      setMessage(
-        email && password
-          ? "이메일 인증과 로그인이 완료되었습니다."
-          : (data.message ?? "이메일 인증이 완료되었습니다."),
-      );
+      setMessage("외대 계정으로 로그인되었습니다.");
     } catch (error) {
       setMessageType("error");
-      setMessage(
-        error instanceof Error ? error.message : "이메일 인증에 실패했습니다.",
-      );
+      setMessage(error instanceof Error ? error.message : "계정 확인에 실패했습니다.");
     } finally {
       setIsAuthPending(false);
     }
   }
 
-  async function handleResendVerification() {
-    if (!email) {
-      setMessageType("error");
-      setMessage("이메일을 입력해야 합니다.");
-      return;
-    }
-
-    setIsAuthPending(true);
+  function handleLogout() {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    setAccessToken("");
+    setCurrentUser(null);
+    setCanCapture(false);
+    setLocation(null);
+    setSubmissionResult(null);
     setMessageType("info");
-    setMessage("이메일 인증을 다시 요청하고 있습니다.");
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/resend-verification`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(data, "이메일 인증 재요청에 실패했습니다."));
-      }
-
-      const token = data.email_verification_token ?? "";
-      setVerificationToken(token);
-      if (token && password) {
-        await verifyAndLogin(token);
-        setMessageType("info");
-        setMessage("이메일 인증과 로그인이 완료되었습니다.");
-      } else {
-        setMessageType("info");
-        setMessage(data.message ?? "인증 이메일을 다시 요청했습니다.");
-      }
-    } catch (error) {
-      setMessageType("error");
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "이메일 인증 재요청에 실패했습니다.",
-      );
-    } finally {
-      setIsAuthPending(false);
-    }
-  }
-
-  async function handleLogin() {
-    if (!email || !password) {
-      setMessageType("error");
-      setMessage("이메일과 비밀번호를 입력해야 합니다.");
-      return;
-    }
-
-    setIsAuthPending(true);
-    setMessageType("info");
-    setMessage("로그인하고 있습니다.");
-
-    try {
-      const token = await loginWithCredentials();
-      setAccessToken(token);
-      setMessageType("info");
-      setMessage("로그인되었습니다. 이제 인증 제출이 가능합니다.");
-    } catch (error) {
-      setMessageType("error");
-      setMessage(error instanceof Error ? error.message : "로그인에 실패했습니다.");
-    } finally {
-      setIsAuthPending(false);
-    }
+    setMessage("로그아웃되었습니다.");
   }
 
   async function verifyQrLocation(targetLocation: LocationState) {
-    if (!binId.trim() || !qrToken.trim()) {
+    if (!hasQr) {
       setCanCapture(false);
       setMessageType("error");
-      setMessage("QR URL의 쓰레기통 ID와 서명 토큰이 필요합니다.");
+      setMessage("지정된 쓰레기통 QR을 먼저 스캔해 주세요.");
       return;
     }
 
     const params = new URLSearchParams({
-      bin_id: binId.trim(),
-      token: qrToken.trim(),
+      bin_id: binId,
+      token: qrToken,
       latitude: String(targetLocation.latitude),
       longitude: String(targetLocation.longitude),
       accuracy_m: String(targetLocation.accuracy),
@@ -329,31 +334,33 @@ export function SubmissionConsole() {
       const response = await fetch(`${API_BASE_URL}/qr/verify?${params}`, {
         cache: "no-store",
       });
-      const data = await response.json().catch(() => null);
+      const data = await readApiResponse<{
+        can_take_photo: boolean;
+        distance_m: number;
+      }>(response, "QR 위치 검증에 실패했습니다.");
 
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(data, "QR 위치 검증에 실패했습니다."));
-      }
-
-      setCanCapture(Boolean(data.can_take_photo));
+      setCanCapture(data.can_take_photo);
       setMessageType(data.can_take_photo ? "info" : "error");
       setMessage(
         data.can_take_photo
-          ? `촬영 가능합니다. 거리 ${data.distance_m}m`
+          ? `쓰레기통 위치가 확인되었습니다. 거리 ${data.distance_m}m`
           : `허용 반경 밖입니다. 거리 ${data.distance_m}m`,
       );
     } catch (error) {
       setCanCapture(false);
       setMessageType("error");
-      setMessage(
-        error instanceof Error ? error.message : "QR 위치 검증에 실패했습니다.",
-      );
+      setMessage(error instanceof Error ? error.message : "위치 검증에 실패했습니다.");
     } finally {
       setIsCheckingQr(false);
     }
   }
 
   function requestLocation() {
+    if (!currentUser) {
+      setMessageType("error");
+      setMessage("외대 계정으로 먼저 시작해 주세요.");
+      return;
+    }
     if (!navigator.geolocation) {
       setMessageType("error");
       setMessage("현재 브라우저에서 위치 확인을 사용할 수 없습니다.");
@@ -374,14 +381,10 @@ export function SubmissionConsole() {
       },
       () => {
         setMessageType("error");
-        setMessage("위치 권한을 확인하지 못했습니다.");
+        setMessage("위치 권한을 허용한 뒤 다시 시도해 주세요.");
         setIsLocating(false);
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
   }
 
@@ -389,21 +392,20 @@ export function SubmissionConsole() {
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
     }
+    setSubmissionResult(null);
 
     if (!file) {
       setPhoto(null);
       setPreviewUrl(null);
       return;
     }
-
     if (!canCapture) {
       setPhoto(null);
       setPreviewUrl(null);
       setMessageType("error");
-      setMessage("촬영 전 QR과 현재 위치 검증을 먼저 통과해야 합니다.");
+      setMessage("현재 위치 검증을 먼저 완료해 주세요.");
       return;
     }
-
     if (!allowedImageTypes.includes(file.type)) {
       setPhoto(null);
       setPreviewUrl(null);
@@ -411,7 +413,6 @@ export function SubmissionConsole() {
       setMessage("jpg, png, webp 형식의 사진만 제출할 수 있습니다.");
       return;
     }
-
     if (file.size > maxImageSizeMb * 1024 * 1024) {
       setPhoto(null);
       setPreviewUrl(null);
@@ -423,21 +424,20 @@ export function SubmissionConsole() {
     setPhoto(file);
     setPreviewUrl(URL.createObjectURL(file));
     setMessageType("info");
-    setMessage("사진을 확인했습니다.");
+    setMessage("촬영한 사진을 확인한 뒤 제출해 주세요.");
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     if (!location || !photo) {
       setMessageType("error");
-      setMessage("로그인, QR, 위치, 사진을 모두 확인해야 합니다.");
+      setMessage("위치와 촬영 사진을 모두 확인해 주세요.");
       return;
     }
 
     const formData = new FormData();
-    formData.append("bin_id", binId.trim());
-    formData.append("token", qrToken.trim());
+    formData.append("bin_id", binId);
+    formData.append("token", qrToken);
     formData.append("latitude", String(location.latitude));
     formData.append("longitude", String(location.longitude));
     formData.append("accuracy_m", String(location.accuracy));
@@ -445,7 +445,7 @@ export function SubmissionConsole() {
 
     setIsSubmitting(true);
     setMessageType("info");
-    setMessage("인증을 제출하고 있습니다.");
+    setMessage("촬영 인증을 처리하고 있습니다.");
 
     try {
       const response = await fetch(`${API_BASE_URL}/submissions`, {
@@ -453,18 +453,21 @@ export function SubmissionConsole() {
         headers: { Authorization: `Bearer ${accessToken}` },
         body: formData,
       });
-      const data = await response.json().catch(() => null);
+      const data = await readApiResponse<SubmissionResult>(
+        response,
+        "인증 제출에 실패했습니다.",
+      );
 
-      if (!response.ok) {
-        const detail = data?.detail?.message ?? "제출 API 응답을 확인해 주세요.";
-        throw new Error(detail);
-      }
-
+      setSubmissionResult(data);
+      setCanCapture(false);
+      setCurrentUser((user) =>
+        user ? { ...user, mileage_balance: data.mileage_balance } : user,
+      );
       setMessageType("info");
-      setMessage(data?.message ?? "인증이 제출되었습니다.");
+      setMessage(data.message);
     } catch (error) {
       setMessageType("error");
-      setMessage(error instanceof Error ? error.message : "제출에 실패했습니다.");
+      setMessage(error instanceof Error ? error.message : "인증 제출에 실패했습니다.");
     } finally {
       setIsSubmitting(false);
     }
@@ -480,158 +483,115 @@ export function SubmissionConsole() {
             <p className="brand-subtitle">분리배출 인증</p>
           </div>
         </div>
-        <div className="status-pill" aria-live="polite">
-          <span className="status-dot" />
-          {apiStatus}
+        <div className="topbar-actions">
+          {currentUser ? (
+            <div className="mileage-badge">{currentUser.mileage_balance}P</div>
+          ) : null}
+          <div className="status-pill" aria-live="polite">
+            <span className="status-dot" />
+            {apiStatus}
+          </div>
         </div>
       </header>
 
       <div className="main-grid">
         <section className="panel">
           <div className="panel-header">
-            <h2 className="panel-title">인증 제출</h2>
+            <h2 className="panel-title">분리배출 인증</h2>
           </div>
           <form className="panel-body" onSubmit={handleSubmit}>
             <div className="form-section">
               <div className="section-heading">
-                <h3 className="section-title">외대 이메일 계정</h3>
-                <span className={`auth-state ${accessToken ? "ready" : ""}`}>
-                  {accessToken ? "로그인됨" : "로그인 필요"}
+                <h3 className="section-title">외대 계정</h3>
+                <span className={`auth-state ${currentUser ? "ready" : ""}`}>
+                  {currentUser ? "로그인됨" : "계정 확인 필요"}
                 </span>
               </div>
 
-              <div className="auth-grid">
-                <label className="field">
-                  <span className="label">이메일</span>
-                  <input
-                    className="input"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="student@hufs.ac.kr"
-                    autoComplete="email"
-                  />
-                </label>
-                <label className="field">
-                  <span className="label">학번</span>
-                  <input
-                    className="input"
-                    value={studentNumber}
-                    onChange={(event) => setStudentNumber(event.target.value)}
-                    placeholder="202400000"
-                    autoComplete="off"
-                  />
-                </label>
-                <label className="field">
-                  <span className="label">이름</span>
-                  <input
-                    className="input"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder="홍길동"
-                    autoComplete="name"
-                  />
-                </label>
-                <label className="field">
-                  <span className="label">비밀번호</span>
-                  <input
-                    className="input"
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="8자 이상"
-                    autoComplete="current-password"
-                  />
-                </label>
-              </div>
-
-              <label className="field">
-                <span className="label">이메일 인증 토큰</span>
-                <input
-                  className="input"
-                  value={verificationToken}
-                  onChange={(event) => setVerificationToken(event.target.value)}
-                  placeholder="개발 환경에서는 회원가입 응답으로 반환"
-                  autoComplete="off"
-                />
-              </label>
-
-              <div className="button-row">
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={handleRegister}
-                  disabled={isAuthPending}
-                >
-                  회원가입
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={handleVerifyEmail}
-                  disabled={isAuthPending}
-                >
-                  이메일 인증
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={handleResendVerification}
-                  disabled={isAuthPending}
-                >
-                  인증 재발급
-                </button>
-                <button
-                  className="button primary"
-                  type="button"
-                  onClick={handleLogin}
-                  disabled={isAuthPending}
-                >
-                  로그인
-                </button>
-              </div>
+              {currentUser ? (
+                <div className="account-summary">
+                  <div>
+                    <strong>{currentUser.email}</strong>
+                    <span>학번 {currentUser.student_number}</span>
+                  </div>
+                  <button
+                    className="button secondary compact"
+                    type="button"
+                    onClick={handleLogout}
+                  >
+                    로그아웃
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="account-grid">
+                    <label className="field">
+                      <span className="label">외대 이메일</span>
+                      <span className="email-input-shell">
+                        <input
+                          className="email-prefix-input"
+                          value={emailId}
+                          onChange={(event) =>
+                            setEmailId(event.target.value.split("@")[0])
+                          }
+                          placeholder="student"
+                          autoComplete="username"
+                        />
+                        <span className="email-domain">@hufs.ac.kr</span>
+                      </span>
+                    </label>
+                    <label className="field">
+                      <span className="label">학번</span>
+                      <input
+                        className="input"
+                        value={studentNumber}
+                        onChange={(event) => setStudentNumber(event.target.value)}
+                        placeholder="202400000"
+                        inputMode="numeric"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <label className="field account-password">
+                      <span className="label">비밀번호</span>
+                      <input
+                        className="input"
+                        type="password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder="8자 이상"
+                        autoComplete="current-password"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    className="button primary account-start-button"
+                    type="button"
+                    onClick={handleAccountStart}
+                    disabled={isAuthPending}
+                  >
+                    {isAuthPending ? "계정 확인 중" : "외대 계정으로 시작"}
+                  </button>
+                </>
+              )}
             </div>
 
-            <div className="auth-grid">
-              <label className="field">
-                <span className="label">쓰레기통 ID</span>
-                  <input
-                    className="input"
-                    value={binId}
-                    onChange={(event) => {
-                      setBinId(event.target.value);
-                      resetQrVerification();
-                    }}
-                  placeholder="HUFS-001"
-                  autoComplete="off"
-                />
-              </label>
-              <label className="field">
-                <span className="label">QR 서명 토큰</span>
-                  <input
-                    className="input"
-                    value={qrToken}
-                    onChange={(event) => {
-                      setQrToken(event.target.value);
-                      resetQrVerification();
-                    }}
-                  placeholder="QR URL의 token 값"
-                  autoComplete="off"
-                />
-              </label>
-            </div>
-
-            <div className="field">
-              <span className="label">현재 위치</span>
-              <div className="button-row">
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={requestLocation}
-                  disabled={isLocating}
-                >
-                  {isLocating || isCheckingQr ? "확인 중" : "위치 확인"}
-                </button>
+            <div className="form-section verification-section">
+              <div className="section-heading">
+                <h3 className="section-title">QR 및 위치</h3>
+                <span className={`stage-state ${hasQr ? "ready" : ""}`}>
+                  {hasQr ? binId : "QR 필요"}
+                </span>
               </div>
+
+              <button
+                className="button secondary location-button"
+                type="button"
+                onClick={requestLocation}
+                disabled={!currentUser || !hasQr || isLocating || isCheckingQr}
+              >
+                {isLocating || isCheckingQr ? "현재 위치 확인 중" : "현재 위치 확인"}
+              </button>
+
               <div className="location-grid">
                 <div className="metric">
                   <p className="metric-label">위도</p>
@@ -646,7 +606,7 @@ export function SubmissionConsole() {
                   </p>
                 </div>
                 <div className="metric">
-                  <p className="metric-label">정확도</p>
+                  <p className="metric-label">GPS 정확도</p>
                   <p className="metric-value">
                     {location ? `${location.accuracy.toFixed(1)}m` : "-"}
                   </p>
@@ -671,7 +631,7 @@ export function SubmissionConsole() {
                 onClick={() => cameraInputRef.current?.click()}
                 disabled={!canCapture}
               >
-                {photo ? "다시 촬영" : "촬영하기"}
+                {photo ? "다시 촬영" : "카메라로 촬영"}
               </button>
             </div>
 
@@ -680,7 +640,7 @@ export function SubmissionConsole() {
                 <Image
                   className="preview-image"
                   src={previewUrl}
-                  alt="선택한 배출 인증 사진"
+                  alt="촬영한 배출 인증 사진"
                   fill
                   unoptimized
                 />
@@ -689,56 +649,88 @@ export function SubmissionConsole() {
               )}
             </div>
 
-            {previewUrl ? <div className="message info">{photoMeta}</div> : null}
             {message ? <div className={`message ${messageType}`}>{message}</div> : null}
 
-            <button className="button primary" type="submit" disabled={!canSubmit}>
-              {isSubmitting ? "제출 중" : "인증 제출"}
+            <button className="button primary submit-button" type="submit" disabled={!canSubmit}>
+              {isSubmitting ? "인증 처리 중" : "사진 인증 제출"}
             </button>
+
+            {submissionResult ? (
+              <section className={`result-panel ${submissionResult.status.toLowerCase()}`}>
+                <div className="result-heading">
+                  <span className="result-mark">✓</span>
+                  <div>
+                    <h3>
+                      {submissionResult.status === "APPROVED"
+                        ? "인증되었습니다"
+                        : "인증이 접수되었습니다"}
+                    </h3>
+                    <p>인증 번호 #{submissionResult.submission_id}</p>
+                  </div>
+                </div>
+                <div className="result-steps">
+                  <div className="result-step done">
+                    <span>1</span>
+                    <strong>촬영 인증 완료</strong>
+                  </div>
+                  <div
+                    className={`result-step ${
+                      submissionResult.status === "APPROVED" ? "done" : "current"
+                    }`}
+                  >
+                    <span>2</span>
+                    <strong>
+                      {submissionResult.status === "APPROVED"
+                        ? "관리자 승인 완료"
+                        : "관리자 검토 대기"}
+                    </strong>
+                  </div>
+                  <div
+                    className={`result-step ${
+                      submissionResult.points_awarded > 0 ? "done" : "pending"
+                    }`}
+                  >
+                    <span>3</span>
+                    <strong>
+                      {submissionResult.points_awarded > 0
+                        ? `마일리지 ${submissionResult.points_awarded}점 적립되었습니다`
+                        : "승인 후 마일리지 적립"}
+                    </strong>
+                  </div>
+                </div>
+                <div className="balance-row">
+                  <span>현재 마일리지</span>
+                  <strong>{submissionResult.mileage_balance}P</strong>
+                </div>
+              </section>
+            ) : null}
           </form>
         </section>
 
         <aside className="panel side-panel">
           <div className="panel-header">
-            <h2 className="panel-title">처리 상태</h2>
+            <h2 className="panel-title">진행 상태</h2>
           </div>
           <div className="panel-body">
             <ol className="steps">
-              <li className="step">
-                <span className="step-number">1</span>
-                <div>
-                  <p className="step-title">계정 인증</p>
-                  <p className="step-text">외대 이메일 인증 후 JWT 발급</p>
-                </div>
-              </li>
-              <li className="step">
-                <span className="step-number">2</span>
-                <div>
-                  <p className="step-title">QR 확인</p>
-                  <p className="step-text">지정된 분리수거함 토큰 확인</p>
-                </div>
-              </li>
-              <li className="step">
-                <span className="step-number">3</span>
-                <div>
-                  <p className="step-title">위치 검증</p>
-                  <p className="step-text">서버 기준 거리와 GPS 정확도 검증</p>
-                </div>
-              </li>
-              <li className="step">
-                <span className="step-number">4</span>
-                <div>
-                  <p className="step-title">관리자 검토</p>
-                  <p className="step-text">사진 확인 후 승인 또는 거절</p>
-                </div>
-              </li>
-              <li className="step">
-                <span className="step-number">5</span>
-                <div>
-                  <p className="step-title">마일리지 적립</p>
-                  <p className="step-text">승인된 제출에만 1점 적립</p>
-                </div>
-              </li>
+              {[
+                ["외대 계정", currentUser ? "완료" : "대기"],
+                ["QR 스캔", hasQr ? "완료" : "대기"],
+                ["위치 확인", canCapture || submissionResult ? "완료" : "대기"],
+                ["사진 촬영", photo ? "완료" : "대기"],
+                [
+                  "마일리지 적립",
+                  submissionResult?.points_awarded ? "완료" : "대기",
+                ],
+              ].map(([title, state], index) => (
+                <li className={`step ${state === "완료" ? "complete" : ""}`} key={title}>
+                  <span className="step-number">{index + 1}</span>
+                  <div>
+                    <p className="step-title">{title}</p>
+                    <p className="step-text">{state}</p>
+                  </div>
+                </li>
+              ))}
             </ol>
           </div>
         </aside>

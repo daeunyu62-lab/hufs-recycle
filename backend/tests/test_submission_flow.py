@@ -1,8 +1,11 @@
 from datetime import UTC, datetime
 
-from app.models import Submission, SubmissionStatus
+import pytest
+from app.core.config import get_settings
+from app.models import PointTransaction, Submission, SubmissionStatus, User
 from app.services.qr_service import create_signed_qr_token
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from tests.factories import (
@@ -59,11 +62,47 @@ def test_submission_creates_pending_after_server_side_checks_pass(
     assert data["status"] == "PENDING"
     assert data["remaining_today"] == 1
     assert data["distance_m"] <= 1
+    assert data["points_awarded"] == 0
+    assert data["mileage_balance"] == 0
 
     submission = db_session.get(Submission, data["submission_id"])
     assert submission is not None
     assert submission.status == SubmissionStatus.PENDING
     assert submission.image_path.startswith("submissions/")
+
+
+def test_demo_submission_auto_approves_and_awards_real_points(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_AUTO_APPROVE_SUBMISSIONS", "true")
+    get_settings.cache_clear()
+    user = create_user(db_session)
+    create_location(db_session)
+
+    response = _post_submission(client, user_id=user.id)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "APPROVED"
+    assert data["points_awarded"] == 1
+    assert data["mileage_balance"] == 1
+
+    submission = db_session.get(Submission, data["submission_id"])
+    refreshed_user = db_session.get(User, user.id)
+    point_transaction = db_session.scalar(
+        select(PointTransaction).where(
+            PointTransaction.submission_id == data["submission_id"]
+        )
+    )
+    assert submission is not None
+    assert submission.status == SubmissionStatus.APPROVED
+    assert submission.reviewed_at is not None
+    assert refreshed_user is not None
+    assert refreshed_user.mileage_balance == 1
+    assert point_transaction is not None
+    assert point_transaction.amount == 1
 
 
 def test_submission_requires_verified_user(

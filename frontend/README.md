@@ -29,9 +29,14 @@ On mobile, the `촬영하기` button opens an image capture input with
 `capture="environment"` so the rear camera is preferred. The button is enabled only
 after the signed QR and current location pass server-side validation.
 
-In the local development email mode, registration uses the verification token from
-the API response to finish email verification and login automatically. A previously
-registered but unverified account can use `인증 재발급`.
+The account screen asks only for the HUFS email prefix, student number, and password.
+It logs in an existing account or creates and verifies a new development account
+without exposing the email verification token in the UI. The access token is kept in
+browser storage to restore the demo session; passwords are never stored in the
+browser or database as plain text.
+
+When the backend uses `DEMO_AUTO_APPROVE_SUBMISSIONS=true`, the result screen shows
+the actual approved submission and mileage balance returned from the database.
 
 ## Getting Started
 

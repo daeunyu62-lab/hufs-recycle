@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.errors import AppError, AppHTTPException, ErrorCode
-from app.models import Submission, SubmissionStatus, User
+from app.models import (
+    PointTransaction,
+    PointTransactionType,
+    Submission,
+    SubmissionStatus,
+    User,
+)
 from app.services.location_service import (
     get_location_by_qr_token,
     get_location_by_signed_qr,
@@ -114,7 +120,9 @@ async def create_submission(
     settings = get_settings()
     now_utc = datetime.now(UTC)
 
-    db.execute(select(User).where(User.id == user.id).with_for_update()).scalar_one()
+    user = db.execute(
+        select(User).where(User.id == user.id).with_for_update()
+    ).scalar_one()
 
     if bin_id and token:
         location = get_location_by_signed_qr(db, bin_id, token)
@@ -215,8 +223,24 @@ async def create_submission(
         status=SubmissionStatus.PENDING,
         submitted_at=now_utc,
     )
+    points_awarded = 0
     try:
         db.add(submission)
+        db.flush()
+        if settings.demo_auto_approve_submissions:
+            points_awarded = settings.points_per_approval
+            submission.status = SubmissionStatus.APPROVED
+            submission.reviewed_at = now_utc
+            user.mileage_balance += points_awarded
+            db.add(
+                PointTransaction(
+                    user_id=user.id,
+                    submission_id=submission.id,
+                    amount=points_awarded,
+                    transaction_type=PointTransactionType.EARN,
+                    description="분리배출 인증 데모 자동 승인",
+                )
+            )
         db.commit()
     except SQLAlchemyError:
         db.rollback()
@@ -230,7 +254,13 @@ async def create_submission(
         "status": submission.status,
         "distance_m": round(distance_m, 2),
         "remaining_today": remaining_today,
-        "message": "인증이 제출되었습니다. 관리자 검토 후 마일리지가 적립됩니다.",
+        "points_awarded": points_awarded,
+        "mileage_balance": user.mileage_balance,
+        "message": (
+            f"인증이 승인되어 마일리지 {points_awarded}점이 적립되었습니다."
+            if points_awarded
+            else "인증이 제출되었습니다. 관리자 검토 후 마일리지가 적립됩니다."
+        ),
     }
 
 

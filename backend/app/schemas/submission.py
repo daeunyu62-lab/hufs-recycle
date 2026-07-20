@@ -10,6 +10,8 @@ class SubmissionCreateResponse(BaseModel):
     status: SubmissionStatus
     distance_m: float
     remaining_today: int
+    points_awarded: int
+    mileage_balance: int
     message: str
 
 

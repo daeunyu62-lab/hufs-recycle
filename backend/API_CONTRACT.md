@@ -197,9 +197,15 @@ await fetch(`${API_BASE_URL}/submissions`, {
   "status": "PENDING",
   "distance_m": 9.6,
   "remaining_today": 1,
+  "points_awarded": 0,
+  "mileage_balance": 3,
   "message": "인증이 제출되었습니다. 관리자 검토 후 마일리지가 적립됩니다."
 }
 ```
+
+로컬 시연에서 `DEMO_AUTO_APPROVE_SUBMISSIONS=true`를 사용하면 응답 상태는
+`APPROVED`가 되고, `points_awarded`와 `mileage_balance`에 실제 DB 반영 결과가
+포함된다. 이 옵션은 운영 환경에서 사용할 수 없다.
 
 백엔드 검증:
 

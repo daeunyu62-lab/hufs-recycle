@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     daily_submission_limit: int = 2
     submission_cooldown_minutes: int = 60
     points_per_approval: int = 1
+    demo_auto_approve_submissions: bool = False
     default_allowed_radius_m: int = 30
     max_gps_accuracy_m: int = 100
     max_image_size_mb: int = 5
@@ -104,6 +105,8 @@ class Settings(BaseSettings):
             raise ValueError("QR_SIGNING_SECRET must be set in production.")
         if self.storage_backend == "local":
             raise ValueError("Local storage cannot be used in production.")
+        if self.demo_auto_approve_submissions:
+            raise ValueError("Demo auto approval cannot be used in production.")
         if self.email_verification_mode == "smtp":
             missing_smtp_values = [
                 name

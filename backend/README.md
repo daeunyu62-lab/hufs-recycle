@@ -68,6 +68,7 @@ Render production variables:
 - `DAILY_SUBMISSION_LIMIT=2`
 - `SUBMISSION_COOLDOWN_MINUTES=60`
 - `POINTS_PER_APPROVAL=1`
+- `DEMO_AUTO_APPROVE_SUBMISSIONS=false`
 - `DEFAULT_ALLOWED_RADIUS_M=30`
 - `MAX_GPS_ACCURACY_M=100`
 - `MAX_IMAGE_SIZE_MB=5`
@@ -115,6 +116,9 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
   Unverified users can request a replacement through
   `POST /api/v1/auth/resend-verification`. Production uses SMTP settings to send the
   verification URL.
+- `DEMO_AUTO_APPROVE_SUBMISSIONS=true` is available only for local demonstrations.
+  It records approval, a point transaction, and the updated balance in one database
+  transaction. Production configuration rejects this option.
 - QR URLs use `bin_id` plus an HMAC signed token. Rotate `QR_SIGNING_SECRET`
   only after planning QR re-generation.
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` to the frontend.
