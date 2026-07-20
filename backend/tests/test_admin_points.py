@@ -22,6 +22,13 @@ def test_user_cannot_access_admin_routes(
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "ADMIN_REQUIRED"
 
+    qr_response = client.get(
+        "/api/v1/admin/locations/1/qr-code",
+        headers=auth_headers(user.id),
+    )
+    assert qr_response.status_code == 403
+    assert qr_response.json()["detail"]["code"] == "ADMIN_REQUIRED"
+
 
 def test_admin_can_generate_signed_qr_url(
     client: TestClient,
@@ -45,6 +52,32 @@ def test_admin_can_generate_signed_qr_url(
     assert data["bin_id"] == location.code
     assert data["token"].startswith("v1.")
     assert "bin_id=HUFS-001" in data["qr_url"]
+
+
+def test_admin_can_download_scannable_qr_png(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin = create_user(
+        db_session,
+        email="admin-qr-image@hufs.ac.kr",
+        student_number="ADMINQRIMAGE",
+        role=UserRole.ADMIN,
+    )
+    location = create_location(db_session)
+
+    response = client.get(
+        f"/api/v1/admin/locations/{location.id}/qr-code",
+        headers=auth_headers(admin.id),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="trash-bin-{location.id}-qr.png"'
+    )
+    assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert len(response.content) > 1_000
 
 
 def test_admin_approval_awards_points_once(

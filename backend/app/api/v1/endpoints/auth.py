@@ -8,11 +8,18 @@ from app.schemas.auth import (
     LoginRequest,
     RegisterRequest,
     RegisterResponse,
+    ResendVerificationRequest,
+    ResendVerificationResponse,
     TokenResponse,
     VerifyEmailRequest,
     VerifyEmailResponse,
 )
-from app.services.auth_service import login_user, register_user, verify_user_email
+from app.services.auth_service import (
+    login_user,
+    register_user,
+    resend_email_verification,
+    verify_user_email,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -36,6 +43,17 @@ def verify_email(
 ) -> VerifyEmailResponse:
     verify_user_email(db, request.token)
     return VerifyEmailResponse(status="ok", message="이메일 인증이 완료되었습니다.")
+
+
+@router.post(
+    "/resend-verification",
+    response_model=ResendVerificationResponse,
+)
+def resend_verification(
+    request: ResendVerificationRequest,
+    db: Annotated[Session, Depends(get_db)],
+) -> ResendVerificationResponse:
+    return resend_email_verification(db, request.email)
 
 
 @router.post("/login", response_model=TokenResponse)

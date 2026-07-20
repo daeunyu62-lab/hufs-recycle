@@ -72,6 +72,18 @@
 }
 ```
 
+### `POST /auth/resend-verification`
+
+미인증 계정의 인증 토큰을 새로 발급한다. 계정 존재 여부가 노출되지 않도록
+가입되지 않았거나 이미 인증된 이메일에도 같은 형식의 성공 응답을 반환한다.
+개발/테스트 환경에서는 새 `email_verification_token`을 응답에 포함한다.
+
+```json
+{
+  "email": "student@hufs.ac.kr"
+}
+```
+
 ### `POST /auth/login`
 
 ```json
@@ -256,6 +268,14 @@ await fetch(`${API_BASE_URL}/submissions`, {
 }
 ```
 
+### `GET /admin/locations/{location_id}/qr-code`
+
+관리자가 인쇄하거나 화면에 표시할 수 있는 실제 QR 이미지를 PNG로 내려받는다.
+QR에는 `bin_id`와 HMAC 서명 토큰이 포함된 `/verify` HTTPS URL이 저장된다.
+
+GPS 좌표를 QR에 저장하지 않는다. QR 스캔 후 프론트엔드가 휴대폰의 현재 위치와
+정확도를 전송하면 백엔드가 쓰레기통 좌표와의 거리를 계산해 지오펜싱을 수행한다.
+
 ### `GET /admin/submissions`
 
 쿼리 필터:
@@ -309,5 +329,5 @@ DB transaction으로 처리한다. 같은 제출에는 `EARN` 거래가 한 번�
 
 모바일 웹에서 위치와 카메라를 사용하려면 HTTPS와 사용자 권한 허용이 필요하다.
 카메라는 사용자가 직접 촬영 버튼 또는 파일 입력을 누른 뒤 열어야 하며,
-프론트엔드는 `accept="image/jpeg,image/png,image/webp"`와 `capture="environment"`로
-후면 카메라를 우선 요청한다.
+프론트엔드는 `accept="image/*"`와 `capture="environment"`로 후면 카메라를 우선
+요청한다. 백엔드는 실제 파일이 jpg, png, webp인지 별도로 검증한다.

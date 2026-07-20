@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_admin, get_db
@@ -34,7 +35,11 @@ from app.services.location_service import (
     serialize_admin_location,
     update_location,
 )
-from app.services.qr_service import build_qr_url, create_signed_qr_token
+from app.services.qr_service import (
+    build_qr_url,
+    create_qr_png,
+    create_signed_qr_token,
+)
 from app.services.storage_service import get_storage_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -82,6 +87,28 @@ def create_admin_location_qr_token(
         bin_id=location.code,
         token=create_signed_qr_token(location.code, location.qr_secret_version),
         qr_url=build_qr_url(location),
+    )
+
+
+@router.get(
+    "/locations/{location_id}/qr-code",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+def download_admin_location_qr_code(
+    location_id: int,
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    location = get_location_by_id(db, location_id)
+    return Response(
+        content=create_qr_png(build_qr_url(location)),
+        media_type="image/png",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="trash-bin-{location.id}-qr.png"'
+            )
+        },
     )
 
 

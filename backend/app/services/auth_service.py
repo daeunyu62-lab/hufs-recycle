@@ -14,7 +14,12 @@ from app.core.security import (
     verify_password,
 )
 from app.models import User, UserRole
-from app.schemas.auth import RegisterRequest, RegisterResponse, TokenResponse
+from app.schemas.auth import (
+    RegisterRequest,
+    RegisterResponse,
+    ResendVerificationResponse,
+    TokenResponse,
+)
 from app.services.email_service import EmailDeliveryError, send_verification_email
 
 
@@ -114,6 +119,39 @@ def verify_user_email(db: Session, token: str) -> None:
     user.email_verified_at = datetime.now(UTC)
     user.email_verification_token_hash = None
     db.commit()
+
+
+def resend_email_verification(
+    db: Session,
+    email: str,
+) -> ResendVerificationResponse:
+    settings = get_settings()
+    user = db.scalar(select(User).where(User.email == email.lower()))
+    generic_message = "인증이 필요한 계정이면 이메일을 다시 발송했습니다."
+
+    if user is None or user.email_verified_at is not None:
+        return ResendVerificationResponse(status="ok", message=generic_message)
+
+    verification_token = secrets.token_urlsafe(32)
+    user.email_verification_token_hash = hash_token(verification_token)
+
+    try:
+        email_sent = send_verification_email(user.email, verification_token)
+        db.commit()
+    except EmailDeliveryError as exc:
+        db.rollback()
+        raise AppHTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            ErrorCode.EMAIL_DELIVERY_FAILED,
+            "이메일 인증 메일 발송에 실패했습니다.",
+        ) from exc
+
+    show_token = not email_sent and settings.app_env.lower() in {"development", "test"}
+    return ResendVerificationResponse(
+        status="ok",
+        message=generic_message,
+        email_verification_token=verification_token if show_token else None,
+    )
 
 
 def login_user(db: Session, email: str, password: str) -> TokenResponse:

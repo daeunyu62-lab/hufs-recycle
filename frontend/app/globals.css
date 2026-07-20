@@ -234,6 +234,20 @@ button:disabled {
   color: var(--primary-strong);
 }
 
+.camera-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.camera-button {
+  width: 100%;
+  min-height: 52px;
+}
+
 .location-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

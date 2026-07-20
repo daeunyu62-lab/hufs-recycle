@@ -1,9 +1,12 @@
 import hmac
 from base64 import urlsafe_b64encode
 from hashlib import sha256
+from io import BytesIO
 from urllib.parse import urlencode
 
+import qrcode
 from fastapi import status
+from qrcode.constants import ERROR_CORRECT_M
 
 from app.core.config import get_settings
 from app.core.errors import AppHTTPException, ErrorCode
@@ -51,6 +54,22 @@ def build_qr_url(location: DisposalLocation) -> str:
         }
     )
     return f"{settings.frontend_base_url.rstrip('/')}/verify?{query}"
+
+
+def create_qr_png(qr_url: str) -> bytes:
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(qr_url)
+    qr.make(fit=True)
+
+    image = qr.make_image(fill_color="black", back_color="white")
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
 def _qr_message(bin_id: str, version: int) -> bytes:

@@ -25,6 +25,14 @@ https://<frontend-service>/verify?bin_id=HUFS-001&token=<signed-token>
 The browser can use camera and geolocation only after user permission. Production
 deployments should use HTTPS.
 
+On mobile, the `촬영하기` button opens an image capture input with
+`capture="environment"` so the rear camera is preferred. The button is enabled only
+after the signed QR and current location pass server-side validation.
+
+In the local development email mode, registration uses the verification token from
+the API response to finish email verification and login automatically. A previously
+registered but unverified account can use `인증 재발급`.
+
 ## Getting Started
 
 First, run the development server:

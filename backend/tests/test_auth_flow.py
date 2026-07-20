@@ -69,6 +69,47 @@ def test_registration_rejects_non_hufs_email(client: TestClient) -> None:
     assert response.json()["detail"]["code"] == "INVALID_EMAIL_DOMAIN"
 
 
+def test_resend_verification_replaces_token_and_allows_login(
+    client: TestClient,
+) -> None:
+    payload = {
+        "email": "resend@hufs.ac.kr",
+        "student_number": "202400099",
+        "name": "재발급",
+        "password": "password123!",
+    }
+    register_response = client.post("/api/v1/auth/register", json=payload)
+    original_token = register_response.json()["email_verification_token"]
+
+    resend_response = client.post(
+        "/api/v1/auth/resend-verification",
+        json={"email": payload["email"]},
+    )
+
+    assert resend_response.status_code == 200
+    replacement_token = resend_response.json()["email_verification_token"]
+    assert replacement_token
+    assert replacement_token != original_token
+
+    old_token_response = client.post(
+        "/api/v1/auth/verify-email",
+        json={"token": original_token},
+    )
+    assert old_token_response.status_code == 401
+
+    verify_response = client.post(
+        "/api/v1/auth/verify-email",
+        json={"token": replacement_token},
+    )
+    assert verify_response.status_code == 200
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert login_response.status_code == 200
+
+
 def test_registration_rejects_duplicate_email_and_student_number(
     client: TestClient,
 ) -> None:

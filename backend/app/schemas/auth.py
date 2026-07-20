@@ -48,6 +48,24 @@ class VerifyEmailResponse(BaseModel):
     message: str
 
 
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        email = value.strip().lower()
+        if "@" not in email:
+            raise ValueError("email must be valid")
+        return email
+
+
+class ResendVerificationResponse(BaseModel):
+    status: str
+    message: str
+    email_verification_token: str | None = None
+
+
 class LoginRequest(BaseModel):
     email: str
     password: str

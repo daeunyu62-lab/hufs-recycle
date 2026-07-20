@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 
 import { API_BASE_URL, fetchHealth } from "@/lib/api";
@@ -13,6 +13,7 @@ type LocationState = {
 
 type ApiErrorPayload = {
   detail?: {
+    code?: string;
     message?: string;
   };
 };
@@ -46,6 +47,7 @@ function readInitialQueryValues() {
 }
 
 export function SubmissionConsole() {
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [initialQuery] = useState(readInitialQueryValues);
   const [apiStatus, setApiStatus] = useState("확인 중");
   const [email, setEmail] = useState("");
@@ -114,6 +116,47 @@ export function SubmissionConsole() {
     }
   }
 
+  async function verifyEmailToken(token: string) {
+    const response = await fetch(`${API_BASE_URL}/auth/verify-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(apiErrorMessage(data, "이메일 인증에 실패했습니다."));
+    }
+
+    return data;
+  }
+
+  async function loginWithCredentials() {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const message =
+        data?.detail?.code === "EMAIL_NOT_VERIFIED"
+          ? "이메일 인증이 필요합니다. 인증 토큰 재발급을 눌러 주세요."
+          : apiErrorMessage(data, "로그인에 실패했습니다.");
+      throw new Error(message);
+    }
+
+    return data.access_token as string;
+  }
+
+  async function verifyAndLogin(token: string) {
+    await verifyEmailToken(token);
+    const tokenResponse = await loginWithCredentials();
+    setVerificationToken("");
+    setAccessToken(tokenResponse);
+  }
+
   async function handleRegister() {
     if (!email || !studentNumber || !name || !password) {
       setMessageType("error");
@@ -142,10 +185,18 @@ export function SubmissionConsole() {
         throw new Error(apiErrorMessage(data, "회원가입에 실패했습니다."));
       }
 
-      setVerificationToken(data.email_verification_token ?? "");
+      const token = data.email_verification_token ?? "";
+      setVerificationToken(token);
       setAccessToken("");
-      setMessageType("info");
-      setMessage("회원가입이 완료되었습니다. 이메일 인증을 진행해 주세요.");
+
+      if (token) {
+        await verifyAndLogin(token);
+        setMessageType("info");
+        setMessage("회원가입, 이메일 인증, 로그인이 완료되었습니다.");
+      } else {
+        setMessageType("info");
+        setMessage("회원가입이 완료되었습니다. 받은 이메일의 인증 링크를 확인해 주세요.");
+      }
     } catch (error) {
       setMessageType("error");
       setMessage(error instanceof Error ? error.message : "회원가입에 실패했습니다.");
@@ -166,23 +217,67 @@ export function SubmissionConsole() {
     setMessage("이메일 인증을 확인하고 있습니다.");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/verify-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: verificationToken.trim() }),
-      });
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(data, "이메일 인증에 실패했습니다."));
+      const data = await verifyEmailToken(verificationToken.trim());
+      if (email && password) {
+        const tokenResponse = await loginWithCredentials();
+        setAccessToken(tokenResponse);
       }
-
+      setVerificationToken("");
       setMessageType("info");
-      setMessage(data.message ?? "이메일 인증이 완료되었습니다.");
+      setMessage(
+        email && password
+          ? "이메일 인증과 로그인이 완료되었습니다."
+          : (data.message ?? "이메일 인증이 완료되었습니다."),
+      );
     } catch (error) {
       setMessageType("error");
       setMessage(
         error instanceof Error ? error.message : "이메일 인증에 실패했습니다.",
+      );
+    } finally {
+      setIsAuthPending(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    if (!email) {
+      setMessageType("error");
+      setMessage("이메일을 입력해야 합니다.");
+      return;
+    }
+
+    setIsAuthPending(true);
+    setMessageType("info");
+    setMessage("이메일 인증을 다시 요청하고 있습니다.");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(data, "이메일 인증 재요청에 실패했습니다."));
+      }
+
+      const token = data.email_verification_token ?? "";
+      setVerificationToken(token);
+      if (token && password) {
+        await verifyAndLogin(token);
+        setMessageType("info");
+        setMessage("이메일 인증과 로그인이 완료되었습니다.");
+      } else {
+        setMessageType("info");
+        setMessage(data.message ?? "인증 이메일을 다시 요청했습니다.");
+      }
+    } catch (error) {
+      setMessageType("error");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "이메일 인증 재요청에 실패했습니다.",
       );
     } finally {
       setIsAuthPending(false);
@@ -201,18 +296,8 @@ export function SubmissionConsole() {
     setMessage("로그인하고 있습니다.");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(data, "로그인에 실패했습니다."));
-      }
-
-      setAccessToken(data.access_token);
+      const token = await loginWithCredentials();
+      setAccessToken(token);
       setMessageType("info");
       setMessage("로그인되었습니다. 이제 인증 제출이 가능합니다.");
     } catch (error) {
@@ -488,6 +573,14 @@ export function SubmissionConsole() {
                   이메일 인증
                 </button>
                 <button
+                  className="button secondary"
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={isAuthPending}
+                >
+                  인증 재발급
+                </button>
+                <button
                   className="button primary"
                   type="button"
                   onClick={handleLogin}
@@ -561,17 +654,26 @@ export function SubmissionConsole() {
               </div>
             </div>
 
-            <label className="field">
+            <div className="field">
               <span className="label">배출 사진</span>
               <input
-                className="input"
+                ref={cameraInputRef}
+                className="camera-input"
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/*"
                 capture="environment"
                 disabled={!canCapture}
                 onChange={(event) => handlePhotoChange(event.target.files?.[0])}
               />
-            </label>
+              <button
+                className="button secondary camera-button"
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={!canCapture}
+              >
+                {photo ? "다시 촬영" : "촬영하기"}
+              </button>
+            </div>
 
             <div className="preview">
               {previewUrl ? (

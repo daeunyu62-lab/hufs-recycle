@@ -111,10 +111,21 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ## Security Notes
 
 - Development and test signups return the email verification token in the API
-  response. Production uses SMTP settings to send the verification URL.
+  response. The frontend can use it to complete the local demo flow automatically.
+  Unverified users can request a replacement through
+  `POST /api/v1/auth/resend-verification`. Production uses SMTP settings to send the
+  verification URL.
 - QR URLs use `bin_id` plus an HMAC signed token. Rotate `QR_SIGNING_SECRET`
   only after planning QR re-generation.
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` to the frontend.
 - Never commit `.env`, database passwords, JWT secrets, or API keys.
 - Store uploaded production images in Supabase private Storage, not Render local disk.
 - Use long random values for `JWT_SECRET_KEY`.
+
+## QR And Geofencing
+
+An admin can download a scannable PNG from
+`GET /api/v1/admin/locations/{location_id}/qr-code`. The QR contains a signed
+frontend URL with `bin_id` and `token`; it does not contain or trust the user's
+GPS coordinates. Geofencing runs on the backend after the phone submits its
+current coordinates and GPS accuracy.
