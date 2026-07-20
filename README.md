@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HUFS Eco Mileage App
 
-## Getting Started
+한국외국어대학교 교내 쓰레기 분리배출 참여를 유도하는 마일리지 웹서비스입니다.
 
-First, run the development server:
+## 담당
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Backend: 김재웅
+- Frontend: 다은
+
+## 프로젝트 구조
+
+- `backend/`: FastAPI 백엔드
+- `frontend/`: Next.js 프론트엔드
+
+## 협업 규칙
+
+1. main 브랜치에는 직접 코드를 올리지 않습니다.
+2. 각자 작업 브랜치에서 개발합니다.
+3. 백엔드는 backend 폴더에서 작업합니다.
+4. 프론트엔드는 frontend 폴더에서 작업합니다.
+5. 작업 완료 후 Pull Request를 생성합니다.
+6. 검토 후 main 브랜치에 병합합니다.
+7. .env, API Key, 비밀번호는 GitHub에 올리지 않습니다.
+
+# HUFS Recycle Monorepo
+
+한국외국어대학교 교내 분리배출 인증과 마일리지 적립을 위한 웹서비스입니다.
+
+## 프로젝트 구조
+
+```text
+hufs-recycle/
+├── backend/   # FastAPI API 서버
+├── frontend/  # Next.js 사용자 화면
+├── render.yaml
+└── .github/workflows/
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 역할
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Backend: FastAPI, PostgreSQL, Supabase Storage, JWT, 관리자 검토, 마일리지
+- Frontend: Next.js, QR 토큰 입력/페이지, 위치 확인, 사진 제출 화면
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 브랜치 전략
 
-## Learn More
+- `main`: 최종 통합 브랜치
+- `feature/backend-init`: 백엔드 및 통합 준비 브랜치
+- `feature/frontend-init`: 프론트엔드 작업 브랜치
+- `feature/backend-flow-implementation`: 백엔드 핵심 플로우 구현 브랜치
 
-To learn more about Next.js, take a look at the following resources:
+`main`에는 직접 커밋하지 않고 Pull Request로 병합합니다.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 로컬 백엔드 실행
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
 
-## Deploy on Vercel
+- Swagger: `http://localhost:8000/docs`
+- Health: `http://localhost:8000/api/v1/health`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 로컬 프론트엔드 실행
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```powershell
+cd frontend
+npm.cmd install
+npm.cmd run dev
+```
+
+- Frontend: `http://localhost:3000`
+- API base: `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`
+
+## 무료 배포 구조
+
+- Backend: Render Web Service
+- Database: Supabase PostgreSQL
+- Image Storage: Supabase private Storage
+- Frontend: Vercel 또는 Render Web Service
+
+실제 비밀값은 GitHub에 올리지 않고 Render, Vercel, Supabase Dashboard에만 입력합니다.
+
+---
