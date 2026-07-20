@@ -38,10 +38,23 @@ class Settings(BaseSettings):
     allowed_email_domains: AllowedEmailDomains = Field(
         default_factory=lambda: ["hufs.ac.kr"]
     )
+    qr_signing_secret: str = "replace-with-a-long-random-qr-signing-secret"
 
     allowed_origins: AllowedOrigins = Field(
         default_factory=lambda: ["http://localhost:3000"]
     )
+    frontend_origins: AllowedOrigins = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
+    frontend_base_url: str = "http://localhost:3000"
+
+    email_verification_mode: str = "development"
+    email_from: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
 
     daily_submission_limit: int = 2
     submission_cooldown_minutes: int = 60
@@ -85,8 +98,24 @@ class Settings(BaseSettings):
 
         if self.database_url.startswith("sqlite"):
             raise ValueError("SQLite cannot be used in production.")
+        if self.jwt_secret_key == "replace-with-a-long-random-secret":
+            raise ValueError("JWT_SECRET_KEY must be set in production.")
+        if self.qr_signing_secret == "replace-with-a-long-random-qr-signing-secret":
+            raise ValueError("QR_SIGNING_SECRET must be set in production.")
         if self.storage_backend == "local":
             raise ValueError("Local storage cannot be used in production.")
+        if self.email_verification_mode == "smtp":
+            missing_smtp_values = [
+                name
+                for name, value in {
+                    "EMAIL_FROM": self.email_from,
+                    "SMTP_HOST": self.smtp_host,
+                }.items()
+                if not value
+            ]
+            if missing_smtp_values:
+                joined_names = ", ".join(missing_smtp_values)
+                raise ValueError(f"Missing production email settings: {joined_names}")
         if self.storage_backend == "supabase":
             missing_supabase_values = [
                 name

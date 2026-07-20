@@ -1,7 +1,9 @@
 import app.models  # noqa: F401
 from app.db.base import Base
+from app.models.disposal_location import DisposalLocation
 from app.models.enums import PointTransactionType, SubmissionStatus, UserRole
 from app.models.point_transaction import PointTransaction
+from app.models.user import User
 from sqlalchemy import UniqueConstraint
 
 
@@ -40,4 +42,16 @@ def test_point_transaction_prevents_duplicate_submission_transaction_type() -> N
         and {column.name for column in constraint.columns}
         == {"submission_id", "transaction_type"}
         for constraint in constraints
+    )
+
+
+def test_user_tracks_mileage_balance() -> None:
+    assert "mileage_balance" in User.__table__.columns
+
+
+def test_disposal_location_has_public_bin_code() -> None:
+    assert "code" in DisposalLocation.__table__.columns
+    assert any(
+        index.name == "ix_disposal_locations_code"
+        for index in DisposalLocation.__table__.indexes
     )

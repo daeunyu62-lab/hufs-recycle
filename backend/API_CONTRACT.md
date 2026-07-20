@@ -33,66 +33,27 @@
 
 주요 오류 코드:
 
-- `EMAIL_ALREADY_EXISTS`
-- `STUDENT_NUMBER_ALREADY_EXISTS`
-- `INVALID_EMAIL_DOMAIN`
+- `AUTH_REQUIRED`
 - `EMAIL_NOT_VERIFIED`
-- `INVALID_CREDENTIALS`
-- `INACTIVE_USER`
-- `INVALID_TOKEN`
-- `ADMIN_REQUIRED`
-- `INVALID_QR_TOKEN`
-- `INACTIVE_LOCATION`
-- `INVALID_COORDINATES`
-- `GPS_ACCURACY_TOO_LOW`
+- `INVALID_QR`
+- `BIN_INACTIVE`
 - `LOCATION_TOO_FAR`
-- `DAILY_LIMIT_EXCEEDED`
-- `COOLDOWN_NOT_FINISHED`
-- `INVALID_IMAGE_TYPE`
-- `IMAGE_TOO_LARGE`
-- `STORAGE_ERROR`
-- `SUBMISSION_NOT_FOUND`
-- `FORBIDDEN_SUBMISSION_ACCESS`
+- `GPS_ACCURACY_TOO_LOW`
+- `HOURLY_LIMIT`
+- `DAILY_LIMIT`
+- `INVALID_IMAGE`
 - `ALREADY_REVIEWED`
-- `INVALID_REJECTION_REASON`
+- `ADMIN_REQUIRED`
+- `EMAIL_DELIVERY_FAILED`
 - `POINT_TRANSACTION_CONFLICT`
-
-## Health
-
-### `GET /health`
-
-인증: 불필요
-
-응답:
-
-```json
-{
-  "status": "ok",
-  "service": "HUFS Recycle API",
-  "environment": "development"
-}
-```
-
-### `GET /health/db`
-
-인증: 불필요
-
-응답:
-
-```json
-{
-  "status": "ok",
-  "database": "ok"
-}
-```
 
 ## 인증
 
 ### `POST /auth/register`
 
-인증: 불필요
-
-요청:
+외대 이메일 회원가입. 개발/테스트 환경에서는 이메일 발송 대신
+`email_verification_token`을 응답에 포함한다. 운영에서는 `EMAIL_VERIFICATION_MODE=smtp`
+설정으로 실제 인증 메일을 발송한다.
 
 ```json
 {
@@ -103,60 +64,15 @@
 }
 ```
 
-규칙:
-
-- 회원가입 기본 권한은 항상 `USER`
-- 공개 API에서 `ADMIN` 지정 불가
-- `ALLOWED_EMAIL_DOMAINS`에 등록된 도메인만 가입 가능
-- 이메일은 lowercase로 저장
-- 이메일과 학번 중복 불가
-- 비밀번호 원문 저장 금지
-- 개발/테스트 환경에서는 이메일 발송 대신 `email_verification_token`을 응답에 포함
-
-응답:
-
-```json
-{
-  "user": {
-    "id": 1,
-    "email": "student@hufs.ac.kr",
-    "student_number": "202100000",
-    "name": "홍길동",
-    "role": "USER",
-    "is_active": true,
-    "is_email_verified": false
-  },
-  "email_verification_required": true,
-  "email_verification_token": "DEV_ONLY_TOKEN"
-}
-```
-
 ### `POST /auth/verify-email`
 
-인증: 불필요
-
-요청:
-
 ```json
 {
-  "token": "DEV_ONLY_TOKEN"
-}
-```
-
-응답:
-
-```json
-{
-  "status": "ok",
-  "message": "이메일 인증이 완료되었습니다."
+  "token": "EMAIL_VERIFICATION_TOKEN"
 }
 ```
 
 ### `POST /auth/login`
-
-인증: 불필요
-
-요청:
 
 ```json
 {
@@ -178,59 +94,88 @@
 
 인증: `USER` 또는 `ADMIN`
 
-응답:
+## QR 및 쓰레기통
 
-```json
-{
-  "id": 1,
-  "email": "student@hufs.ac.kr",
-  "student_number": "202100000",
-  "name": "홍길동",
-  "role": "USER",
-  "is_active": true,
-  "email_verified_at": "2026-07-20T10:00:00Z"
-}
+QR 접속 URL:
+
+```text
+https://<frontend-service>/verify?bin_id=HUFS-001&token=<signed-token>
 ```
 
-## QR 장소
+프론트엔드는 로그인 전후에 `bin_id`와 `token` query string을 보존해야 한다.
 
-### `GET /locations/{qr_token}`
+### `GET /trash-bins/{bin_id}`
+
+QR URL의 `bin_id`로 쓰레기통 공개 정보를 조회한다.
+
+### `GET /qr/verify`
 
 인증: 불필요
 
+쿼리:
+
+- `bin_id`
+- `token`
+- `latitude`
+- `longitude`
+- `accuracy_m`
+
 응답:
 
 ```json
 {
-  "id": 1,
-  "name": "교내 테스트 분리수거함",
-  "description": "개발 테스트 장소",
+  "bin": {
+    "id": 1,
+    "code": "HUFS-001",
+    "name": "교내 테스트 분리수거함",
+    "description": "개발 테스트 장소",
+    "allowed_radius_m": 30,
+    "is_active": true
+  },
+  "distance_m": 8.4,
   "allowed_radius_m": 30,
-  "is_active": true
+  "gps_accuracy_m": 12,
+  "can_take_photo": true
 }
 ```
 
-규칙:
+프론트엔드는 이 API가 성공하고 `can_take_photo=true`일 때만 촬영 또는 파일 입력을
+활성화한다.
 
-- 존재하지 않는 QR은 `404`
-- 비활성 장소는 사용 불가
-- 관리자 내부 정보는 과도하게 노출하지 않음
-
-## 인증 제출
+## 사진 인증
 
 ### `POST /submissions`
 
-인증: `USER` 또는 `ADMIN`
+인증: 이메일 인증 완료 사용자
 
 요청 형식: `multipart/form-data`
 
 필드:
 
-- `qr_token`: string
-- `latitude`: number, `-90 <= latitude <= 90`
-- `longitude`: number, `-180 <= longitude <= 180`
-- `accuracy_m`: number, `0 < accuracy_m <= MAX_GPS_ACCURACY_M`
-- `photo`: file, `image/jpeg`, `image/png`, `image/webp`
+- `bin_id`: QR URL의 쓰레기통 ID
+- `token`: QR URL의 signed token
+- `latitude`: 사용자 위도
+- `longitude`: 사용자 경도
+- `accuracy_m`: GPS 정확도
+- `photo`: `image/jpeg`, `image/png`, `image/webp`
+
+FormData 예시:
+
+```ts
+const formData = new FormData();
+formData.append("bin_id", binId);
+formData.append("token", token);
+formData.append("latitude", String(position.coords.latitude));
+formData.append("longitude", String(position.coords.longitude));
+formData.append("accuracy_m", String(position.coords.accuracy));
+formData.append("photo", photoFile);
+
+await fetch(`${API_BASE_URL}/submissions`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${accessToken}` },
+  body: formData,
+});
+```
 
 성공 응답:
 
@@ -244,52 +189,44 @@
 }
 ```
 
-검증 순서:
+백엔드 검증:
 
-1. 로그인 사용자 확인
-2. QR 존재 여부 확인
-3. QR 장소 활성 여부 확인
-4. 좌표 범위 검증
-5. GPS 정확도 검증
-6. 서버에서 Haversine 거리 계산
-7. 허용 반경 검증
-8. 하루 제출 제한 검증
-9. 60분 쿨다운 검증
-10. 이미지 MIME 검증
+1. JWT 사용자 확인
+2. 이메일 인증 완료 여부 확인
+3. `bin_id`와 signed `token` 검증
+4. 쓰레기통 활성 여부 확인
+5. 좌표 범위 검증
+6. GPS 정확도 검증
+7. Haversine 거리 계산과 허용 반경 검증
+8. 하루 2회 제한 검증
+9. 최근 제출 후 60분 제한 검증
+10. MIME 타입과 이미지 헤더 검증
 11. 이미지 용량 검증
-12. Storage 저장
+12. private Storage 저장
 13. `PENDING` DB 저장
 
-## 사용자 제출 조회
+### `GET /submissions/eligibility`
 
-### `GET /submissions/{submission_id}`
-
-인증: `USER` 또는 `ADMIN`
-
-규칙:
-
-- 일반 사용자는 자신의 제출만 조회 가능
-- 다른 사용자의 제출 조회 시 `403`
-
-### `GET /users/me/submissions`
-
-인증: `USER` 또는 `ADMIN`
-
-쿼리:
-
-- `page`
-- `page_size`
-
-응답:
+오늘 남은 제출 가능 횟수와 다음 제출 가능 시간을 조회한다.
 
 ```json
 {
-  "items": [],
-  "page": 1,
-  "page_size": 20,
-  "total": 0
+  "daily_limit": 2,
+  "used_today": 1,
+  "remaining_today": 1,
+  "cooldown_minutes": 60,
+  "next_submission_at": "2026-07-20T10:30:00Z",
+  "can_submit_now": false
 }
 ```
+
+### `GET /users/me/submissions`
+
+내 제출 목록 조회.
+
+### `GET /submissions/{submission_id}`
+
+내 제출 상세 조회. 일반 사용자는 자신의 제출만 조회할 수 있다.
 
 ## 관리자
 
@@ -297,19 +234,31 @@
 
 ### `GET /admin/locations`
 
-관리자용 분리수거함 목록 조회. QR 토큰과 좌표를 포함한다.
+관리자용 쓰레기통 목록 조회. 좌표, `bin_id`, QR URL을 포함한다.
 
 ### `POST /admin/locations`
 
-관리자용 분리수거함 생성. QR 토큰은 서버에서 생성한다.
+쓰레기통 등록. `code`를 생략하면 서버가 `HUFS-XXXXXXXX` 형식으로 생성한다.
 
 ### `PATCH /admin/locations/{location_id}`
 
-관리자용 분리수거함 이름, 설명, 좌표, 허용 반경, 활성 상태 수정.
+쓰레기통 수정 또는 비활성화.
+
+### `POST /admin/locations/{location_id}/qr-token`
+
+관리자용 QR URL 생성.
+
+```json
+{
+  "bin_id": "HUFS-001",
+  "token": "v1.SIGNED_TOKEN",
+  "qr_url": "https://frontend.example.com/verify?bin_id=HUFS-001&token=v1.SIGNED_TOKEN"
+}
+```
 
 ### `GET /admin/submissions`
 
-쿼리:
+쿼리 필터:
 
 - `status`
 - `user_id`
@@ -325,15 +274,10 @@
 
 ### `PATCH /admin/submissions/{submission_id}/approve`
 
-규칙:
-
-- `PENDING`만 승인 가능
-- 승인과 마일리지 `EARN` 생성은 하나의 DB transaction
-- 동일 제출에 `EARN` 중복 생성 불가
+`PENDING`만 승인 가능하다. 승인, 마일리지 거래 생성, 사용자 잔액 증가는 하나의
+DB transaction으로 처리한다. 같은 제출에는 `EARN` 거래가 한 번만 생성된다.
 
 ### `PATCH /admin/submissions/{submission_id}/reject`
-
-요청:
 
 ```json
 {
@@ -341,42 +285,29 @@
 }
 ```
 
-규칙:
-
-- `reason`은 공백 불가
-- `PENDING`만 거절 가능
-- 마일리지 생성 금지
-
-### `GET /admin/statistics`
-
-응답 항목:
-
-- `total_submissions`
-- `pending_submissions`
-- `approved_submissions`
-- `rejected_submissions`
-- `today_submissions`
-- `today_approved`
-- `active_users`
-- `total_points_awarded`
-- `submissions_by_location`
+거절된 제출에는 마일리지가 지급되지 않는다.
 
 ## 마일리지
 
 ### `GET /users/me/points`
 
-인증: `USER` 또는 `ADMIN`
+현재 잔액과 적립 내역 조회. 잔액은 `users.mileage_balance`에 저장하고,
+승인 시 `point_transactions`와 함께 갱신한다.
 
-응답:
+## 프론트엔드 처리 기준
 
-```json
-{
-  "balance": 1,
-  "transactions": [],
-  "page": 1,
-  "page_size": 20,
-  "total": 0
-}
-```
+- `AUTH_REQUIRED` 또는 HTTP 401: 로그인 화면으로 이동하고 QR query 보존
+- `EMAIL_NOT_VERIFIED`: 이메일 인증 화면으로 이동
+- `INVALID_QR`: QR을 다시 스캔하도록 안내
+- `BIN_INACTIVE`: 사용 중지된 쓰레기통 안내
+- `LOCATION_TOO_FAR`: 쓰레기통 가까이 이동 안내
+- `GPS_ACCURACY_TOO_LOW`: GPS 정확도 개선 후 재시도 안내
+- `HOURLY_LIMIT`: `retry_after_seconds` 기준 대기 안내
+- `DAILY_LIMIT`: 오늘 제출 횟수 초과 안내
+- `INVALID_IMAGE`: jpg, png, webp 사진 재촬영 안내
+- `ALREADY_REVIEWED`: 이미 처리된 제출 안내
 
-잔액은 `point_transactions.amount` 합계로 계산한다.
+모바일 웹에서 위치와 카메라를 사용하려면 HTTPS와 사용자 권한 허용이 필요하다.
+카메라는 사용자가 직접 촬영 버튼 또는 파일 입력을 누른 뒤 열어야 하며,
+프론트엔드는 `accept="image/jpeg,image/png,image/webp"`와 `capture="environment"`로
+후면 카메라를 우선 요청한다.

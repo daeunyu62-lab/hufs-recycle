@@ -20,21 +20,52 @@ type ApiErrorPayload = {
 const allowedImageTypes = ["image/jpeg", "image/png", "image/webp"];
 const maxImageSizeMb = 5;
 
+function readInitialQueryValues() {
+  if (typeof window === "undefined") {
+    return {
+      binId: "",
+      qrToken: "",
+      verificationToken: "",
+    };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  if (window.location.pathname.includes("verify-email")) {
+    return {
+      binId: "",
+      qrToken: "",
+      verificationToken: params.get("token") ?? "",
+    };
+  }
+
+  return {
+    binId: params.get("bin_id") ?? "",
+    qrToken: params.get("token") ?? params.get("qr_token") ?? "",
+    verificationToken: "",
+  };
+}
+
 export function SubmissionConsole() {
+  const [initialQuery] = useState(readInitialQueryValues);
   const [apiStatus, setApiStatus] = useState("확인 중");
   const [email, setEmail] = useState("");
   const [studentNumber, setStudentNumber] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [verificationToken, setVerificationToken] = useState("");
+  const [verificationToken, setVerificationToken] = useState(
+    initialQuery.verificationToken,
+  );
   const [accessToken, setAccessToken] = useState("");
-  const [qrToken, setQrToken] = useState("");
+  const [binId, setBinId] = useState(initialQuery.binId);
+  const [qrToken, setQrToken] = useState(initialQuery.qrToken);
   const [location, setLocation] = useState<LocationState | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"info" | "error">("info");
   const [isAuthPending, setIsAuthPending] = useState(false);
+  const [isCheckingQr, setIsCheckingQr] = useState(false);
+  const [canCapture, setCanCapture] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -53,7 +84,13 @@ export function SubmissionConsole() {
   }, [previewUrl]);
 
   const canSubmit = Boolean(
-    accessToken && qrToken.trim() && location && photo && !isSubmitting,
+    accessToken &&
+      binId.trim() &&
+      qrToken.trim() &&
+      location &&
+      photo &&
+      canCapture &&
+      !isSubmitting,
   );
 
   const photoMeta = useMemo(() => {
@@ -66,6 +103,15 @@ export function SubmissionConsole() {
 
   function apiErrorMessage(payload: ApiErrorPayload | null, fallback: string) {
     return payload?.detail?.message ?? fallback;
+  }
+
+  function resetQrVerification() {
+    setCanCapture(false);
+    setPhoto(null);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
   }
 
   async function handleRegister() {
@@ -177,6 +223,51 @@ export function SubmissionConsole() {
     }
   }
 
+  async function verifyQrLocation(targetLocation: LocationState) {
+    if (!binId.trim() || !qrToken.trim()) {
+      setCanCapture(false);
+      setMessageType("error");
+      setMessage("QR URL의 쓰레기통 ID와 서명 토큰이 필요합니다.");
+      return;
+    }
+
+    const params = new URLSearchParams({
+      bin_id: binId.trim(),
+      token: qrToken.trim(),
+      latitude: String(targetLocation.latitude),
+      longitude: String(targetLocation.longitude),
+      accuracy_m: String(targetLocation.accuracy),
+    });
+
+    setIsCheckingQr(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/qr/verify?${params}`, {
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(data, "QR 위치 검증에 실패했습니다."));
+      }
+
+      setCanCapture(Boolean(data.can_take_photo));
+      setMessageType(data.can_take_photo ? "info" : "error");
+      setMessage(
+        data.can_take_photo
+          ? `촬영 가능합니다. 거리 ${data.distance_m}m`
+          : `허용 반경 밖입니다. 거리 ${data.distance_m}m`,
+      );
+    } catch (error) {
+      setCanCapture(false);
+      setMessageType("error");
+      setMessage(
+        error instanceof Error ? error.message : "QR 위치 검증에 실패했습니다.",
+      );
+    } finally {
+      setIsCheckingQr(false);
+    }
+  }
+
   function requestLocation() {
     if (!navigator.geolocation) {
       setMessageType("error");
@@ -187,13 +278,13 @@ export function SubmissionConsole() {
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setLocation({
+        const nextLocation = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy: position.coords.accuracy,
-        });
-        setMessageType("info");
-        setMessage("위치 정보를 확인했습니다.");
+        };
+        setLocation(nextLocation);
+        void verifyQrLocation(nextLocation);
         setIsLocating(false);
       },
       () => {
@@ -217,6 +308,14 @@ export function SubmissionConsole() {
     if (!file) {
       setPhoto(null);
       setPreviewUrl(null);
+      return;
+    }
+
+    if (!canCapture) {
+      setPhoto(null);
+      setPreviewUrl(null);
+      setMessageType("error");
+      setMessage("촬영 전 QR과 현재 위치 검증을 먼저 통과해야 합니다.");
       return;
     }
 
@@ -252,7 +351,8 @@ export function SubmissionConsole() {
     }
 
     const formData = new FormData();
-    formData.append("qr_token", qrToken.trim());
+    formData.append("bin_id", binId.trim());
+    formData.append("token", qrToken.trim());
     formData.append("latitude", String(location.latitude));
     formData.append("longitude", String(location.longitude));
     formData.append("accuracy_m", String(location.accuracy));
@@ -398,16 +498,34 @@ export function SubmissionConsole() {
               </div>
             </div>
 
-            <label className="field">
-              <span className="label">QR 토큰</span>
-              <input
-                className="input"
-                value={qrToken}
-                onChange={(event) => setQrToken(event.target.value)}
-                placeholder="QR 코드의 토큰"
-                autoComplete="off"
-              />
-            </label>
+            <div className="auth-grid">
+              <label className="field">
+                <span className="label">쓰레기통 ID</span>
+                  <input
+                    className="input"
+                    value={binId}
+                    onChange={(event) => {
+                      setBinId(event.target.value);
+                      resetQrVerification();
+                    }}
+                  placeholder="HUFS-001"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="field">
+                <span className="label">QR 서명 토큰</span>
+                  <input
+                    className="input"
+                    value={qrToken}
+                    onChange={(event) => {
+                      setQrToken(event.target.value);
+                      resetQrVerification();
+                    }}
+                  placeholder="QR URL의 token 값"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
 
             <div className="field">
               <span className="label">현재 위치</span>
@@ -418,7 +536,7 @@ export function SubmissionConsole() {
                   onClick={requestLocation}
                   disabled={isLocating}
                 >
-                  {isLocating ? "확인 중" : "위치 확인"}
+                  {isLocating || isCheckingQr ? "확인 중" : "위치 확인"}
                 </button>
               </div>
               <div className="location-grid">
@@ -450,6 +568,7 @@ export function SubmissionConsole() {
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 capture="environment"
+                disabled={!canCapture}
                 onChange={(event) => handlePhotoChange(event.target.files?.[0])}
               />
             </label>

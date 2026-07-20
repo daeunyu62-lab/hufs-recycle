@@ -28,6 +28,8 @@ services:
         sync: false
       - key: JWT_SECRET_KEY
         sync: false
+      - key: QR_SIGNING_SECRET
+        sync: false
       - key: JWT_ALGORITHM
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
@@ -36,6 +38,24 @@ services:
         value: hufs.ac.kr
       - key: ALLOWED_ORIGINS
         sync: false
+      - key: FRONTEND_ORIGINS
+        sync: false
+      - key: FRONTEND_BASE_URL
+        sync: false
+      - key: EMAIL_VERIFICATION_MODE
+        value: smtp
+      - key: EMAIL_FROM
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_USE_TLS
+        value: "true"
       - key: DAILY_SUBMISSION_LIMIT
         value: "2"
       - key: SUBMISSION_COOLDOWN_MINUTES

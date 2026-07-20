@@ -19,7 +19,9 @@ def test_settings(
 ) -> Generator[None, None, None]:
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-for-pytest-32-bytes")
+    monkeypatch.setenv("QR_SIGNING_SECRET", "test-qr-signing-secret-32-bytes")
     monkeypatch.setenv("ALLOWED_EMAIL_DOMAINS", "hufs.ac.kr")
+    monkeypatch.setenv("FRONTEND_BASE_URL", "http://localhost:3000")
     monkeypatch.setenv("LOCAL_UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     get_settings.cache_clear()

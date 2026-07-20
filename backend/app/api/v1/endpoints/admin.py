@@ -17,6 +17,7 @@ from app.schemas.location import (
     AdminLocationCreate,
     AdminLocationPublic,
     AdminLocationUpdate,
+    QrTokenResponse,
 )
 from app.schemas.submission import SubmissionPublic
 from app.services.admin_service import (
@@ -28,9 +29,12 @@ from app.services.admin_service import (
 )
 from app.services.location_service import (
     create_location,
+    get_location_by_id,
     list_locations,
+    serialize_admin_location,
     update_location,
 )
+from app.services.qr_service import build_qr_url, create_signed_qr_token
 from app.services.storage_service import get_storage_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -42,7 +46,10 @@ def read_admin_locations(
     db: Annotated[Session, Depends(get_db)],
 ) -> AdminLocationListResponse:
     items = list_locations(db)
-    return AdminLocationListResponse(items=items, total=len(items))
+    return AdminLocationListResponse(
+        items=[serialize_admin_location(item) for item in items],
+        total=len(items),
+    )
 
 
 @router.post("/locations", response_model=AdminLocationPublic)
@@ -51,7 +58,7 @@ def create_admin_location(
     _: Annotated[User, Depends(get_current_admin)],
     db: Annotated[Session, Depends(get_db)],
 ) -> object:
-    return create_location(db, request)
+    return serialize_admin_location(create_location(db, request))
 
 
 @router.patch("/locations/{location_id}", response_model=AdminLocationPublic)
@@ -61,7 +68,21 @@ def update_admin_location(
     _: Annotated[User, Depends(get_current_admin)],
     db: Annotated[Session, Depends(get_db)],
 ) -> object:
-    return update_location(db, location_id, request)
+    return serialize_admin_location(update_location(db, location_id, request))
+
+
+@router.post("/locations/{location_id}/qr-token", response_model=QrTokenResponse)
+def create_admin_location_qr_token(
+    location_id: int,
+    _: Annotated[User, Depends(get_current_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> QrTokenResponse:
+    location = get_location_by_id(db, location_id)
+    return QrTokenResponse(
+        bin_id=location.code,
+        token=create_signed_qr_token(location.code, location.qr_secret_version),
+        qr_url=build_qr_url(location),
+    )
 
 
 @router.get("/submissions", response_model=AdminSubmissionListResponse)

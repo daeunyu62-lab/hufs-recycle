@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from app.models import Submission, SubmissionStatus
+from app.services.qr_service import create_signed_qr_token
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -17,21 +18,29 @@ def _post_submission(
     client: TestClient,
     *,
     user_id: int,
-    qr_token: str = "test-qr-token",
+    bin_id: str = "HUFS-001",
+    token: str | None = None,
+    qr_token: str | None = None,
     latitude: float = 37.597,
     longitude: float = 127.058,
     accuracy_m: float = 10,
     upload: tuple[str, bytes, str] | None = None,
 ):
+    form_data = {
+        "latitude": str(latitude),
+        "longitude": str(longitude),
+        "accuracy_m": str(accuracy_m),
+    }
+    if qr_token is not None:
+        form_data["qr_token"] = qr_token
+    else:
+        form_data["bin_id"] = bin_id
+        form_data["token"] = token or create_signed_qr_token(bin_id, 1)
+
     return client.post(
         "/api/v1/submissions",
         headers=auth_headers(user_id),
-        data={
-            "qr_token": qr_token,
-            "latitude": str(latitude),
-            "longitude": str(longitude),
-            "accuracy_m": str(accuracy_m),
-        },
+        data=form_data,
         files={"photo": upload or png_upload()},
     )
 
@@ -80,20 +89,26 @@ def test_submission_rejects_qr_location_gps_and_image_failures(
     db_session: Session,
 ) -> None:
     user = create_user(db_session)
-    create_location(db_session, qr_token="inactive-token", is_active=False)
+    create_location(
+        db_session,
+        code="HUFS-INACTIVE",
+        qr_token="inactive-token",
+        is_active=False,
+    )
     create_location(db_session)
 
-    invalid_qr = _post_submission(client, user_id=user.id, qr_token="missing-token")
-    assert invalid_qr.status_code == 404
-    assert invalid_qr.json()["detail"]["code"] == "INVALID_QR_TOKEN"
+    invalid_qr = _post_submission(client, user_id=user.id, token="bad-token")
+    assert invalid_qr.status_code == 401
+    assert invalid_qr.json()["detail"]["code"] == "INVALID_QR"
 
     inactive_location = _post_submission(
         client,
         user_id=user.id,
-        qr_token="inactive-token",
+        bin_id="HUFS-INACTIVE",
+        token=create_signed_qr_token("HUFS-INACTIVE", 1),
     )
     assert inactive_location.status_code == 400
-    assert inactive_location.json()["detail"]["code"] == "INACTIVE_LOCATION"
+    assert inactive_location.json()["detail"]["code"] == "BIN_INACTIVE"
 
     poor_accuracy = _post_submission(client, user_id=user.id, accuracy_m=150)
     assert poor_accuracy.status_code == 400
@@ -109,7 +124,7 @@ def test_submission_rejects_qr_location_gps_and_image_failures(
         upload=("photo.png", b"not an actual png", "image/png"),
     )
     assert invalid_image.status_code == 400
-    assert invalid_image.json()["detail"]["code"] == "INVALID_IMAGE_TYPE"
+    assert invalid_image.json()["detail"]["code"] == "INVALID_IMAGE"
 
 
 def test_submission_enforces_cooldown_after_pending_submission(
@@ -125,7 +140,7 @@ def test_submission_enforces_cooldown_after_pending_submission(
     second_response = _post_submission(client, user_id=user.id)
 
     assert second_response.status_code == 429
-    assert second_response.json()["detail"]["code"] == "COOLDOWN_NOT_FINISHED"
+    assert second_response.json()["detail"]["code"] == "HOURLY_LIMIT"
 
 
 def test_submission_enforces_daily_limit_before_cooldown(
@@ -150,4 +165,33 @@ def test_submission_enforces_daily_limit_before_cooldown(
     response = _post_submission(client, user_id=user.id)
 
     assert response.status_code == 429
-    assert response.json()["detail"]["code"] == "DAILY_LIMIT_EXCEEDED"
+    assert response.json()["detail"]["code"] == "DAILY_LIMIT"
+
+
+def test_qr_verify_and_submission_eligibility(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user = create_user(db_session)
+    location = create_location(db_session)
+    token = create_signed_qr_token(location.code, location.qr_secret_version)
+
+    qr_response = client.get(
+        "/api/v1/qr/verify",
+        params={
+            "bin_id": location.code,
+            "token": token,
+            "latitude": "37.597",
+            "longitude": "127.058",
+            "accuracy_m": "10",
+        },
+    )
+    assert qr_response.status_code == 200
+    assert qr_response.json()["can_take_photo"] is True
+
+    eligibility_response = client.get(
+        "/api/v1/submissions/eligibility",
+        headers=auth_headers(user.id),
+    )
+    assert eligibility_response.status_code == 200
+    assert eligibility_response.json()["remaining_today"] == 2

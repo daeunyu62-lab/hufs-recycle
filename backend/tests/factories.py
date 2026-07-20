@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from app.core.security import create_access_token, hash_password
 from app.models import DisposalLocation, Submission, SubmissionStatus, User, UserRole
+from app.services.qr_service import create_signed_qr_token
 from sqlalchemy.orm import Session
 
 
@@ -44,6 +45,7 @@ def create_location(
     db: Session,
     *,
     name: str = "테스트 분리수거함",
+    code: str = "HUFS-001",
     qr_token: str = "test-qr-token",
     latitude: float = 37.597,
     longitude: float = 127.058,
@@ -51,6 +53,7 @@ def create_location(
     is_active: bool = True,
 ) -> DisposalLocation:
     location = DisposalLocation(
+        code=code,
         name=name,
         description="테스트 장소",
         latitude=Decimal(str(latitude)),
@@ -63,6 +66,16 @@ def create_location(
     db.commit()
     db.refresh(location)
     return location
+
+
+def signed_qr_payload(location: DisposalLocation) -> dict[str, str]:
+    return {
+        "bin_id": location.code,
+        "token": create_signed_qr_token(
+            location.code,
+            location.qr_secret_version,
+        ),
+    }
 
 
 def create_submission(

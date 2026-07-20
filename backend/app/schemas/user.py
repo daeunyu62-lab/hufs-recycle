@@ -13,5 +13,6 @@ class UserPublic(BaseModel):
     role: UserRole
     is_active: bool
     email_verified_at: datetime | None
+    mileage_balance: int
 
     model_config = ConfigDict(from_attributes=True)

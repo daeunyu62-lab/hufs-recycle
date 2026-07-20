@@ -36,3 +36,12 @@ class SubmissionListResponse(BaseModel):
     page: int
     page_size: int
     total: int
+
+
+class SubmissionEligibilityResponse(BaseModel):
+    daily_limit: int
+    used_today: int
+    remaining_today: int
+    cooldown_minutes: int
+    next_submission_at: datetime | None
+    can_submit_now: bool

@@ -72,9 +72,18 @@ def approve_submission(db: Session, submission_id: int, admin: User) -> Submissi
             "이미 마일리지가 적립된 제출입니다.",
         )
 
+    user = db.get(User, submission.user_id)
+    if user is None:
+        raise AppHTTPException(
+            status.HTTP_404_NOT_FOUND,
+            ErrorCode.INVALID_TOKEN,
+            "제출 사용자를 찾을 수 없습니다.",
+        )
+
     submission.status = SubmissionStatus.APPROVED
     submission.reviewed_at = datetime.now(UTC)
     submission.reviewed_by = admin.id
+    user.mileage_balance += settings.points_per_approval
     db.add(
         PointTransaction(
             user_id=submission.user_id,
@@ -86,6 +95,7 @@ def approve_submission(db: Session, submission_id: int, admin: User) -> Submissi
     )
 
     try:
+        db.add(user)
         db.commit()
     except IntegrityError as exc:
         db.rollback()

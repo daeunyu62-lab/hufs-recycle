@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.errors import AppError, AppHTTPException, ErrorCode
 from app.models import Submission, SubmissionStatus, User
-from app.services.location_service import get_location_by_qr_token
+from app.services.location_service import (
+    get_location_by_qr_token,
+    get_location_by_signed_qr,
+)
 from app.services.storage_service import get_storage_service
 from app.utils.distance import haversine_distance_m
 from app.utils.files import extension_for_mime_type, is_valid_image_content
@@ -100,7 +103,9 @@ def _latest_valid_submission(db: Session, user_id: int) -> Submission | None:
 async def create_submission(
     db: Session,
     user: User,
-    qr_token: str,
+    qr_token: str | None,
+    bin_id: str | None,
+    token: str | None,
     latitude: float,
     longitude: float,
     accuracy_m: float,
@@ -109,7 +114,19 @@ async def create_submission(
     settings = get_settings()
     now_utc = datetime.now(UTC)
 
-    location = get_location_by_qr_token(db, qr_token)
+    db.execute(select(User).where(User.id == user.id).with_for_update()).scalar_one()
+
+    if bin_id and token:
+        location = get_location_by_signed_qr(db, bin_id, token)
+    elif qr_token:
+        location = get_location_by_qr_token(db, qr_token)
+    else:
+        raise AppHTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            ErrorCode.INVALID_QR,
+            "QR 토큰 또는 쓰레기통 ID와 서명 토큰이 필요합니다.",
+        )
+
     _validate_coordinates(latitude, longitude, accuracy_m)
     _validate_gps_accuracy(accuracy_m)
 
@@ -134,7 +151,7 @@ async def create_submission(
     if today_count >= settings.daily_submission_limit:
         raise AppHTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
-            ErrorCode.DAILY_LIMIT_EXCEEDED,
+            ErrorCode.DAILY_LIMIT,
             "오늘 제출 가능한 횟수를 모두 사용했습니다.",
             {"daily_submission_limit": settings.daily_submission_limit},
         )
@@ -147,7 +164,7 @@ async def create_submission(
             retry_after_seconds = int((cooldown - elapsed).total_seconds())
             raise AppHTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
-                ErrorCode.COOLDOWN_NOT_FINISHED,
+                ErrorCode.HOURLY_LIMIT,
                 "최근 제출 후 60분이 지나야 다시 제출할 수 있습니다.",
                 {"retry_after_seconds": retry_after_seconds},
             )
@@ -156,7 +173,7 @@ async def create_submission(
     if extension_for_mime_type(content_type) is None:
         raise AppHTTPException(
             status.HTTP_400_BAD_REQUEST,
-            ErrorCode.INVALID_IMAGE_TYPE,
+            ErrorCode.INVALID_IMAGE,
             "jpg, png, webp 이미지만 제출할 수 있습니다.",
         )
 
@@ -173,7 +190,7 @@ async def create_submission(
     if not is_valid_image_content(content_type, content):
         raise AppHTTPException(
             status.HTTP_400_BAD_REQUEST,
-            ErrorCode.INVALID_IMAGE_TYPE,
+            ErrorCode.INVALID_IMAGE,
             "이미지 파일 내용이 MIME 타입과 일치하지 않습니다.",
         )
 
@@ -246,6 +263,33 @@ def list_user_submissions(
 ) -> tuple[list[Submission], int]:
     query = select(Submission).where(Submission.user_id == user_id)
     return _paginate_submissions(db, query, page, page_size)
+
+
+def get_submission_eligibility(
+    db: Session,
+    user_id: int,
+) -> dict[str, object]:
+    settings = get_settings()
+    now_utc = datetime.now(UTC)
+    used_today = _today_submission_count(db, user_id, now_utc)
+    remaining_today = max(settings.daily_submission_limit - used_today, 0)
+    latest_submission = _latest_valid_submission(db, user_id)
+
+    next_submission_at = None
+    if latest_submission is not None:
+        cooldown = timedelta(minutes=settings.submission_cooldown_minutes)
+        candidate = _as_aware_utc(latest_submission.submitted_at) + cooldown
+        if candidate > now_utc:
+            next_submission_at = candidate
+
+    return {
+        "daily_limit": settings.daily_submission_limit,
+        "used_today": used_today,
+        "remaining_today": remaining_today,
+        "cooldown_minutes": settings.submission_cooldown_minutes,
+        "next_submission_at": next_submission_at,
+        "can_submit_now": remaining_today > 0 and next_submission_at is None,
+    }
 
 
 def _paginate_submissions(

@@ -15,6 +15,7 @@ from app.core.security import (
 )
 from app.models import User, UserRole
 from app.schemas.auth import RegisterRequest, RegisterResponse, TokenResponse
+from app.services.email_service import EmailDeliveryError, send_verification_email
 
 
 def _is_allowed_email_domain(email: str, settings: Settings) -> bool:
@@ -30,6 +31,7 @@ def _user_auth_response(user: User) -> dict[str, object]:
         "name": user.name,
         "role": user.role,
         "is_active": user.is_active,
+        "mileage_balance": user.mileage_balance,
         "is_email_verified": user.email_verified_at is not None,
     }
 
@@ -74,10 +76,22 @@ def register_user(db: Session, request: RegisterRequest) -> RegisterResponse:
         is_active=True,
     )
     db.add(user)
-    db.commit()
+
+    try:
+        db.flush()
+        email_sent = send_verification_email(email, verification_token)
+        db.commit()
+    except EmailDeliveryError as exc:
+        db.rollback()
+        raise AppHTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            ErrorCode.EMAIL_DELIVERY_FAILED,
+            "이메일 인증 메일 발송에 실패했습니다.",
+        ) from exc
+
     db.refresh(user)
 
-    show_token = settings.app_env.lower() in {"development", "test"}
+    show_token = not email_sent and settings.app_env.lower() in {"development", "test"}
     return RegisterResponse(
         user=_user_auth_response(user),
         email_verification_required=True,

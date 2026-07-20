@@ -18,6 +18,7 @@ class User(TimestampMixin, Base):
     hashed_password: Mapped[str] = mapped_column(String(255))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     email_verification_token_hash: Mapped[str | None] = mapped_column(String(64))
+    mileage_balance: Mapped[int] = mapped_column(default=0, nullable=False)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role"),
         default=UserRole.USER,

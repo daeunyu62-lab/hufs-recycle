@@ -16,6 +16,15 @@ Production should use the deployed backend URL:
 NEXT_PUBLIC_API_BASE_URL=https://<render-service>.onrender.com/api/v1
 ```
 
+QR entry URLs should preserve both query parameters through login:
+
+```text
+https://<frontend-service>/verify?bin_id=HUFS-001&token=<signed-token>
+```
+
+The browser can use camera and geolocation only after user permission. Production
+deployments should use HTTPS.
+
 ## Getting Started
 
 First, run the development server:

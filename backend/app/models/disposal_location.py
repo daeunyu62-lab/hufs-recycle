@@ -8,10 +8,21 @@ from app.db.base import Base
 from app.models.mixins import TimestampMixin
 
 
+def _create_bin_code() -> str:
+    return f"HUFS-{uuid4().hex[:8].upper()}"
+
+
 class DisposalLocation(TimestampMixin, Base):
     __tablename__ = "disposal_locations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(
+        String(50),
+        default=_create_bin_code,
+        unique=True,
+        index=True,
+        nullable=False,
+    )
     name: Mapped[str] = mapped_column(String(150))
     description: Mapped[str | None] = mapped_column(Text)
     latitude: Mapped[Decimal] = mapped_column(Numeric(9, 6))
@@ -24,6 +35,7 @@ class DisposalLocation(TimestampMixin, Base):
         index=True,
         nullable=False,
     )
+    qr_secret_version: Mapped[int] = mapped_column(default=1, nullable=False)
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True,

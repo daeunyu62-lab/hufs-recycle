@@ -1,10 +1,18 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import PointTransaction, PointTransactionType
+from app.models import PointTransaction, PointTransactionType, User
 
 
 def get_user_point_balance(db: Session, user_id: int) -> int:
+    user = db.get(User, user_id)
+    if user is not None:
+        return user.mileage_balance
+
+    return _sum_user_point_transactions(db, user_id)
+
+
+def _sum_user_point_transactions(db: Session, user_id: int) -> int:
     return (
         db.scalar(
             select(func.coalesce(func.sum(PointTransaction.amount), 0)).where(

@@ -27,6 +27,7 @@ class UserAuthResponse(BaseModel):
     name: str
     role: UserRole
     is_active: bool
+    mileage_balance: int
     is_email_verified: bool
 
     model_config = ConfigDict(from_attributes=True)

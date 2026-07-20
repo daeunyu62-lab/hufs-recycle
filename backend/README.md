@@ -52,10 +52,19 @@ Render production variables:
 - `BUSINESS_TIMEZONE=Asia/Seoul`
 - `DATABASE_URL`
 - `JWT_SECRET_KEY`
+- `QR_SIGNING_SECRET`
 - `JWT_ALGORITHM=HS256`
 - `ACCESS_TOKEN_EXPIRE_MINUTES=120`
 - `ALLOWED_EMAIL_DOMAINS=hufs.ac.kr`
-- `ALLOWED_ORIGINS`
+- `FRONTEND_ORIGINS`
+- `FRONTEND_BASE_URL`
+- `EMAIL_VERIFICATION_MODE=smtp`
+- `EMAIL_FROM`
+- `SMTP_HOST`
+- `SMTP_PORT=587`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_USE_TLS=true`
 - `DAILY_SUBMISSION_LIMIT=2`
 - `SUBMISSION_COOLDOWN_MINUTES=60`
 - `POINTS_PER_APPROVAL=1`
@@ -102,8 +111,9 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ## Security Notes
 
 - Development and test signups return the email verification token in the API
-  response. Production should wire this token to an email delivery provider
-  before exposing registration publicly.
+  response. Production uses SMTP settings to send the verification URL.
+- QR URLs use `bin_id` plus an HMAC signed token. Rotate `QR_SIGNING_SECRET`
+  only after planning QR re-generation.
 - Never expose `SUPABASE_SERVICE_ROLE_KEY` to the frontend.
 - Never commit `.env`, database passwords, JWT secrets, or API keys.
 - Store uploaded production images in Supabase private Storage, not Render local disk.

@@ -23,6 +23,30 @@ def test_user_cannot_access_admin_routes(
     assert response.json()["detail"]["code"] == "ADMIN_REQUIRED"
 
 
+def test_admin_can_generate_signed_qr_url(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    admin = create_user(
+        db_session,
+        email="admin-qr@hufs.ac.kr",
+        student_number="ADMINQR",
+        role=UserRole.ADMIN,
+    )
+    location = create_location(db_session)
+
+    response = client.post(
+        f"/api/v1/admin/locations/{location.id}/qr-token",
+        headers=auth_headers(admin.id),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["bin_id"] == location.code
+    assert data["token"].startswith("v1.")
+    assert "bin_id=HUFS-001" in data["qr_url"]
+
+
 def test_admin_approval_awards_points_once(
     client: TestClient,
     db_session: Session,
@@ -60,6 +84,8 @@ def test_admin_approval_awards_points_once(
     )
     assert points_response.status_code == 200
     assert points_response.json()["balance"] == 1
+    db_session.refresh(user)
+    assert user.mileage_balance == 1
 
     duplicate_response = client.patch(
         f"/api/v1/admin/submissions/{submission.id}/approve",
