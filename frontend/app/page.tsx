@@ -1,6 +1,5 @@
-import { SubmissionConsole } from "@/components/submission-console";
+import { UserDashboard } from "@/components/user-dashboard";
 
 export default function Home() {
-  return <SubmissionConsole />;
+  return <UserDashboard />;
 }
-

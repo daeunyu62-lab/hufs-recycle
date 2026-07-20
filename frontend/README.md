@@ -1,75 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HUFS Recycle Frontend
 
-## HUFS Recycle Frontend
+Next.js frontend for the HUFS Global Campus recycling verification flow.
 
-This frontend is stored under `frontend/` in the monorepo.
+## Local setup
 
-Copy `.env.example` to `.env.local` for local development:
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
-```
-
-Production should use the deployed backend URL:
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=https://<render-service>.onrender.com/api/v1
-```
-
-QR entry URLs should preserve both query parameters through login:
-
-```text
-https://<frontend-service>/verify?bin_id=HUFS-001&token=<signed-token>
-```
-
-The browser can use camera and geolocation only after user permission. Production
-deployments should use HTTPS.
-
-On mobile, the `촬영하기` button opens an image capture input with
-`capture="environment"` so the rear camera is preferred. The button is enabled only
-after the signed QR and current location pass server-side validation.
-
-The account screen asks only for the HUFS email prefix, student number, and password.
-It logs in an existing account or creates and verifies a new development account
-without exposing the email verification token in the UI. The access token is kept in
-browser storage to restore the demo session; passwords are never stored in the
-browser or database as plain text.
-
-When the backend uses `DEMO_AUTO_APPROVE_SUBMISSIONS=true`, the result screen shows
-the actual approved submission and mileage balance returned from the database.
-
-## Getting Started
-
-First, run the development server:
-
-```bash
+```powershell
+cd frontend
+Copy-Item .env.example .env.local
 npm.cmd install
 npm.cmd run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`. The backend must be running on
+`http://localhost:8000` unless `NEXT_PUBLIC_API_BASE_URL` is changed.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Main routes
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `/`: account entry, mileage balance, eligibility, and recent submissions
+- `/verify?bin_id=<code>&token=<signed-token>`: geofence, camera, and submission flow
+- `/activity`: current user's submission history
+- `/mileage`: mileage transaction history
+- `/admin`: submission review, location management, and QR download
 
-## Learn More
+The account form asks for the HUFS email prefix, student number, and password. It
+logs in an existing user or creates and verifies a development account when the
+backend email mode is `console`. The JWT is stored in browser local storage to
+restore the demo session; passwords are never stored in the browser or database
+as plain text.
 
-To learn more about Next.js, take a look at the following resources:
+On mobile, the camera action uses `capture="environment"` to prefer the rear
+camera. Camera and geolocation require user permission, and a phone opening the
+site over the network must use HTTPS. The backend repeats QR, geofence, GPS,
+cooldown, daily limit, and image validation before accepting a submission.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+For a presentation flow, set `DEMO_AUTO_APPROVE_SUBMISSIONS=true` only in local
+development. A valid submission then returns an approved status and the actual
+updated mileage balance. Production rejects startup when that option is enabled.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Checks
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```powershell
+npm.cmd run lint
+npm.cmd run build
+```
