@@ -21,6 +21,7 @@
 5. 작업 완료 후 Pull Request를 생성합니다.
 6. 검토 후 main 브랜치에 병합합니다.
 7. .env, API Key, 비밀번호는 GitHub에 올리지 않습니다.
+
 # HUFS Recycle Monorepo
 
 한국외국어대학교 교내 분리배출 인증과 마일리지 적립을 위한 웹서비스입니다.
@@ -45,6 +46,7 @@ hufs-recycle/
 - `main`: 최종 통합 브랜치
 - `feature/backend-init`: 백엔드 및 통합 준비 브랜치
 - `feature/frontend-init`: 프론트엔드 작업 브랜치
+- `feature/backend-flow-implementation`: 백엔드 핵심 플로우 구현 브랜치
 
 `main`에는 직접 커밋하지 않고 Pull Request로 병합합니다.
 

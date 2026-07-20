@@ -13,6 +13,27 @@ htmlcov/
 venv/
 backend/.venv/
 
+# Node dependencies
+node_modules/
+frontend/node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Test and build output
+coverage/
+frontend/coverage/
+.next/
+out/
+build/
+frontend/.next/
+frontend/out/
+frontend/build/
+
 # Environment files
 .env
 .env.*
@@ -20,20 +41,28 @@ backend/.venv/
 backend/.env
 backend/.env.*
 !backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
 
 # Local backend runtime data
 backend/dev.db
 backend/dev.db-*
 backend/uploads/
 
-# Frontend
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/.env
-frontend/.env.*
-!frontend/.env.example
+# Vercel and TypeScript
+.vercel/
+frontend/.vercel/
+*.tsbuildinfo
+next-env.d.ts
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
 # IDE and OS
 .DS_Store
 Thumbs.db
+*.pem
