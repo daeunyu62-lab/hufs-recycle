@@ -1,8 +1,7 @@
 export const BETA_STORAGE_KEY = "hufs-eco-mile-beta-v1";
 
 export type BetaUser = {
-  name: string;
-  studentId: string;
+  email: string;
   verifiedAt: string;
 };
 
@@ -45,14 +44,28 @@ export function loadBetaData(): BetaData {
     const raw = window.localStorage.getItem(BETA_STORAGE_KEY);
     if (!raw) return EMPTY_BETA_DATA;
     const parsed = JSON.parse(raw) as Partial<BetaData>;
+    const storedUser = parsed.user as Partial<BetaUser> | undefined;
     return {
-      user: parsed.user ?? null,
+      user:
+        storedUser && typeof storedUser.email === "string" && isHufsEmail(storedUser.email)
+          ? {
+              email: storedUser.email.toLowerCase(),
+              verifiedAt:
+                typeof storedUser.verifiedAt === "string"
+                  ? storedUser.verifiedAt
+                  : new Date().toISOString(),
+            }
+          : null,
       points: typeof parsed.points === "number" ? parsed.points : 0,
       records: Array.isArray(parsed.records) ? parsed.records : [],
     };
   } catch {
     return EMPTY_BETA_DATA;
   }
+}
+
+export function isHufsEmail(value: string) {
+  return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@hufs\.ac\.kr$/i.test(value.trim());
 }
 
 export function saveBetaData(data: BetaData) {

@@ -12,13 +12,14 @@ npm run dev
 브라우저에서 아래 주소를 확인합니다.
 
 - 서비스 소개: `http://localhost:3000/`
-- 체크인: `http://localhost:3000/check-in?spotId=HUFS-GLOBAL-001`
+- 체크인: `http://localhost:3000/check-in?spotId=HUFS-GLOBAL-001&geo=verified&lat=37.337739&lng=127.268589&radius=100`
 - 베타 QR: `http://localhost:3000/beta-qr`
 - 마이페이지: `http://localhost:3000/mypage`
 
 ## 데이터와 베타 도구
 
-- 로그인 정보, 마일리지, 인증 내역은 브라우저 `localStorage`에만 저장됩니다.
+- `@hufs.ac.kr` 학교 이메일 로그인 정보, 마일리지, 인증 내역은 브라우저 `localStorage`에만 저장됩니다.
+- QR코드에는 체크인 주소와 발표용 지오펜싱 좌표가 함께 포함되며, 실제 GPS 요청 없이 확인 완료 흐름을 연출합니다.
 - 카메라 사진은 브라우저 화면에만 표시되며 서버로 전송하지 않습니다.
 - 개발 모드에서는 테스트 위치와 베타 데이터 초기화 버튼이 표시됩니다.
 - 배포 환경에서도 시연 도구가 필요하면 `NEXT_PUBLIC_ENABLE_BETA_TOOLS=true`를 설정합니다. 실제 공개 배포에서는 이 값을 설정하지 않습니다.

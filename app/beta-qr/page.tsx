@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import QRCode from "qrcode";
 import { AppHeader } from "@/components/AppHeader";
-import { BETA_SPOT } from "@/lib/spots";
+import { BETA_SPOT, buildBetaCheckInPath } from "@/lib/spots";
 
 export default function BetaQrPage() {
   const [targetUrl, setTargetUrl] = useState("");
@@ -12,7 +12,7 @@ export default function BetaQrPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const url = `${window.location.origin}/check-in?spotId=${BETA_SPOT.id}`;
+    const url = `${window.location.origin}${buildBetaCheckInPath()}`;
     QRCode.toDataURL(url, {
       width: 720,
       margin: 2,
@@ -33,11 +33,12 @@ export default function BetaQrPage() {
         <section className="qr-intro">
           <span className="eyebrow">BETA TEST QR</span>
           <h1>휴대폰으로<br />체크인 흐름을 시작하세요.</h1>
-          <p>이 QR은 현재 접속한 도메인을 자동으로 사용합니다. 배포 후에는 별도 수정 없이 배포 주소로 연결됩니다.</p>
+          <p>이 QR에는 체크인 주소와 발표용 지오펜싱 정보가 함께 담겨 있습니다. 촬영하면 학교 이메일 로그인 후 위치 확인과 사진 인증이 이어집니다.</p>
           <dl className="qr-details">
             <div><dt>수거함</dt><dd>{BETA_SPOT.name}</dd></div>
             <div><dt>수거함 ID</dt><dd>{BETA_SPOT.id}</dd></div>
             <div><dt>인증 범위</dt><dd>{BETA_SPOT.radiusMeters}m 이내</dd></div>
+            <div><dt>GPS 정보</dt><dd>{BETA_SPOT.latitude}, {BETA_SPOT.longitude}</dd></div>
           </dl>
           <Link className="text-link" href="/">← 서비스 소개로 돌아가기</Link>
         </section>

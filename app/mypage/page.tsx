@@ -9,8 +9,9 @@ import {
   formatRecordDate,
   loadBetaData,
 } from "@/lib/storage";
+import { buildBetaCheckInPath } from "@/lib/spots";
 
-const CHECK_IN_URL = "/check-in?spotId=HUFS-GLOBAL-001";
+const CHECK_IN_URL = buildBetaCheckInPath();
 const showBetaTools =
   process.env.NODE_ENV !== "production" ||
   process.env.NEXT_PUBLIC_ENABLE_BETA_TOOLS === "true";
@@ -56,8 +57,8 @@ export default function MyPage() {
             <section className="profile-hero">
               <div>
                 <span className="eyebrow eyebrow-light">MY ECO MILE</span>
-                <h1>{data.user.name}님의<br />친환경 실천 기록</h1>
-                <p>학번 {data.user.studentId}</p>
+                <h1>HUFS 학생님의<br />친환경 실천 기록</h1>
+                <p>{data.user.email}</p>
               </div>
               <div className="profile-mark" aria-hidden="true">♻</div>
             </section>

@@ -1,4 +1,4 @@
-const FLOW_STEPS = ["본인확인", "위치확인", "사진인증", "적립완료"] as const;
+const FLOW_STEPS = ["이메일 로그인", "위치확인", "사진인증", "적립완료"] as const;
 
 type FlowProgressProps = {
   current: number;

@@ -20,13 +20,13 @@ test("renders the HUFS ECO MILE landing page", async () => {
   const html = await response.text();
   assert.match(html, /HUFS ECO MILE/);
   assert.match(html, /버리는 순간이/);
-  assert.match(html, /check-in\?spotId=HUFS-GLOBAL-001/);
+  assert.match(html, /check-in\?spotId=HUFS-GLOBAL-001(?:&amp;|&)geo=verified/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
 });
 
 test("serves check-in, QR, and my page routes", async () => {
   for (const pathname of [
-    "/check-in?spotId=HUFS-GLOBAL-001",
+    "/check-in?spotId=HUFS-GLOBAL-001&geo=verified&lat=37.337739&lng=127.268589&radius=100",
     "/beta-qr",
     "/mypage",
   ]) {

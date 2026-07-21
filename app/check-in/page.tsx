@@ -4,13 +4,13 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import { FlowProgress } from "@/components/FlowProgress";
-import { formatDistance, haversineDistanceMeters } from "@/lib/geo";
-import { RECYCLING_SPOTS, RecyclingSpot } from "@/lib/spots";
+import { hasValidQrGeoContext, RECYCLING_SPOTS, RecyclingSpot } from "@/lib/spots";
 import {
   BetaData,
   EMPTY_BETA_DATA,
   getLocalDateKey,
   hasAuthenticatedToday,
+  isHufsEmail,
   loadBetaData,
   saveBetaData,
 } from "@/lib/storage";
@@ -31,15 +31,11 @@ type Stage =
   | "duplicate";
 
 type LocationResult = {
-  distance: number;
-  accuracy: number;
-  allowed: boolean;
-  source: "gps" | "test";
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  verified: true;
 } | null;
-
-const showBetaTools =
-  process.env.NODE_ENV !== "production" ||
-  process.env.NEXT_PUBLIC_ENABLE_BETA_TOOLS === "true";
 
 const sleep = (milliseconds: number) =>
   new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -51,28 +47,13 @@ function stageProgress(stage: Stage) {
   return 4;
 }
 
-function locationErrorMessage(error: GeolocationPositionError) {
-  if (error.code === error.PERMISSION_DENIED) {
-    return "위치 권한이 거부되었습니다. 브라우저 주소창의 사이트 설정에서 위치 권한을 허용한 뒤 다시 시도해 주세요.";
-  }
-  if (error.code === error.POSITION_UNAVAILABLE) {
-    return "현재 위치 신호를 확인할 수 없습니다. GPS 또는 Wi-Fi를 켜고 창가나 야외에서 다시 시도해 주세요.";
-  }
-  if (error.code === error.TIMEOUT) {
-    return "위치 확인 시간이 초과되었습니다. 네트워크와 GPS 상태를 확인한 뒤 다시 시도해 주세요.";
-  }
-  return "위치를 가져오는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.";
-}
-
 export default function CheckInPage() {
   const [stage, setStage] = useState<Stage>("loading");
   const [spot, setSpot] = useState<RecyclingSpot | null>(null);
   const [data, setData] = useState<BetaData>(EMPTY_BETA_DATA);
-  const [name, setName] = useState("");
-  const [studentId, setStudentId] = useState("");
+  const [email, setEmail] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [locationResult, setLocationResult] = useState<LocationResult>(null);
-  const [locationError, setLocationError] = useState("");
   const [cameraStatus, setCameraStatus] = useState<"idle" | "requesting" | "active" | "error">("idle");
   const [cameraError, setCameraError] = useState("");
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -91,7 +72,7 @@ export default function CheckInPage() {
     const initializeTimer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       const requestedSpot = RECYCLING_SPOTS[params.get("spotId") ?? ""];
-      if (!requestedSpot) {
+      if (!requestedSpot || !hasValidQrGeoContext(params, requestedSpot)) {
         setStage("invalid");
         return;
       }
@@ -99,13 +80,8 @@ export default function CheckInPage() {
       const storedData = loadBetaData();
       setSpot(requestedSpot);
       setData(storedData);
-      if (!storedData.user) {
-        setStage("login");
-      } else if (hasAuthenticatedToday(storedData, requestedSpot.id)) {
-        setStage("duplicate");
-      } else {
-        setStage("location");
-      }
+      setEmail(storedData.user?.email ?? "");
+      setStage("login");
     }, 0);
     return () => window.clearTimeout(initializeTimer);
   }, []);
@@ -120,10 +96,13 @@ export default function CheckInPage() {
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const normalizedName = name.trim();
-    const normalizedStudentId = studentId.trim();
-    if (!normalizedName || !normalizedStudentId || !agreed) {
-      setFormError("이름, 학번, 필수 동의를 모두 확인해 주세요.");
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!isHufsEmail(normalizedEmail)) {
+      setFormError("한국외대 이메일(@hufs.ac.kr)을 정확히 입력해 주세요.");
+      return;
+    }
+    if (!agreed) {
+      setFormError("개인정보 활용 동의가 필요합니다.");
       return;
     }
 
@@ -133,8 +112,7 @@ export default function CheckInPage() {
     const nextData: BetaData = {
       ...data,
       user: {
-        name: normalizedName,
-        studentId: normalizedStudentId,
+        email: normalizedEmail,
         verifiedAt: new Date().toISOString(),
       },
     };
@@ -151,57 +129,18 @@ export default function CheckInPage() {
     setStage("location");
   };
 
-  const applyCoordinates = (
-    latitude: number,
-    longitude: number,
-    accuracy: number,
-    source: "gps" | "test",
-  ) => {
+  const verifyQrLocation = async () => {
     if (!spot) return;
-    const distance = haversineDistanceMeters(
-      { latitude, longitude },
-      { latitude: spot.latitude, longitude: spot.longitude },
-    );
-    setLocationError("");
-    setLocationResult({
-      distance,
-      accuracy,
-      allowed: distance <= spot.radiusMeters,
-      source,
-    });
-    setStage("locationResult");
-  };
-
-  const requestLocation = () => {
-    setLocationError("");
     setLocationResult(null);
     setStage("locating");
-    if (!("geolocation" in navigator)) {
-      setLocationError("이 브라우저는 위치 확인을 지원하지 않습니다. 최신 모바일 브라우저에서 다시 시도해 주세요.");
-      setStage("locationResult");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        applyCoordinates(
-          position.coords.latitude,
-          position.coords.longitude,
-          position.coords.accuracy,
-          "gps",
-        );
-      },
-      (error) => {
-        setLocationError(locationErrorMessage(error));
-        setStage("locationResult");
-      },
-      { enableHighAccuracy: true, timeout: 12_000, maximumAge: 0 },
-    );
-  };
-
-  const useTestLocation = () => {
-    if (!spot) return;
-    applyCoordinates(spot.latitude + 0.00002, spot.longitude, 5, "test");
+    await sleep(900);
+    setLocationResult({
+      latitude: spot.latitude,
+      longitude: spot.longitude,
+      radiusMeters: spot.radiusMeters,
+      verified: true,
+    });
+    setStage("locationResult");
   };
 
   const startCamera = async () => {
@@ -282,6 +221,10 @@ export default function CheckInPage() {
   const authenticatePhoto = async () => {
     if (!spot || !photoPreview || isSubmitting) return;
     const latestData = loadBetaData();
+    if (!latestData.user || !isHufsEmail(latestData.user.email)) {
+      setStage("login");
+      return;
+    }
     if (hasAuthenticatedToday(latestData, spot.id)) {
       setData(latestData);
       setStage("duplicate");
@@ -314,6 +257,10 @@ export default function CheckInPage() {
   const openCameraStep = () => {
     if (!spot) return;
     const latestData = loadBetaData();
+    if (!latestData.user || !isHufsEmail(latestData.user.email)) {
+      setStage("login");
+      return;
+    }
     if (hasAuthenticatedToday(latestData, spot.id)) {
       setData(latestData);
       setStage("duplicate");
@@ -341,7 +288,7 @@ export default function CheckInPage() {
             <div className="status-symbol status-error" aria-hidden="true">!</div>
             <span className="card-kicker">QR 확인 실패</span>
             <h1>유효하지 않은 QR코드입니다</h1>
-            <p>수거함에 부착된 공식 QR코드를 다시 촬영해 주세요.</p>
+            <p>체크인 주소와 GPS 정보가 포함된 공식 QR코드를 다시 촬영해 주세요.</p>
             <a className="button button-primary button-full" href="/beta-qr">베타 QR 확인하기</a>
             <Link className="text-link" href="/">홈으로 돌아가기</Link>
           </section>
@@ -350,30 +297,21 @@ export default function CheckInPage() {
         {stage === "login" && (
           <section className="flow-card">
             <div className="card-heading">
-              <span className="card-kicker">STEP 1 · 본인확인</span>
-              <h1>반가워요! 먼저 본인정보를 확인할게요.</h1>
-              <p>입력 정보는 이 기기의 베타테스트 데이터로만 저장됩니다.</p>
+              <span className="card-kicker">STEP 1 · 학교 이메일 로그인</span>
+              <h1>한국외대 이메일로 로그인해 주세요.</h1>
+              <p>학교 구성원 확인을 위해 @hufs.ac.kr 이메일만 사용할 수 있습니다.</p>
             </div>
             <form className="login-form" onSubmit={handleLogin}>
               <label>
-                <span>이름</span>
+                <span>한국외대 이메일</span>
                 <input
-                  autoComplete="name"
-                  data-testid="name-input"
-                  placeholder="홍길동"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </label>
-              <label>
-                <span>학번</span>
-                <input
-                  autoComplete="off"
-                  data-testid="student-id-input"
-                  inputMode="numeric"
-                  placeholder="202600000"
-                  value={studentId}
-                  onChange={(event) => setStudentId(event.target.value)}
+                  autoComplete="email"
+                  data-testid="email-input"
+                  inputMode="email"
+                  placeholder="student@hufs.ac.kr"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                 />
               </label>
               <label className="consent-row">
@@ -384,15 +322,15 @@ export default function CheckInPage() {
                   onChange={(event) => setAgreed(event.target.checked)}
                 />
                 <span>
-                  개인정보 및 위치정보 활용에 동의합니다.
-                  <small>베타테스트 진행과 위치 인증에만 사용됩니다.</small>
+                  개인정보 활용에 동의합니다.
+                  <small>이메일과 적립 내역은 이 기기의 베타테스트 데이터로만 저장됩니다.</small>
                 </span>
               </label>
               {formError && <p className="inline-error" role="alert">{formError}</p>}
               <button className="button button-primary button-full" type="submit">
-                로그인 및 본인확인
+                학교 이메일로 로그인
               </button>
-              <p className="form-caption">베타테스트용 간편 본인확인</p>
+              <p className="form-caption">실제 메일 인증을 전송하지 않는 베타테스트용 로그인입니다.</p>
             </form>
           </section>
         )}
@@ -400,8 +338,8 @@ export default function CheckInPage() {
         {stage === "identityChecking" && (
           <section className="flow-card centered-card" role="status" aria-live="polite">
             <div className="spinner" />
-            <span className="card-kicker">본인확인 처리 중</span>
-            <h1>입력한 정보를 확인하고 있습니다</h1>
+            <span className="card-kicker">학교 계정 확인 중</span>
+            <h1>HUFS 이메일을 확인하고 있습니다</h1>
             <p>잠시만 기다려 주세요.</p>
           </section>
         )}
@@ -409,11 +347,11 @@ export default function CheckInPage() {
         {stage === "identityComplete" && (
           <section className="flow-card centered-card" role="status">
             <div className="status-symbol status-success" aria-hidden="true">✓</div>
-            <span className="card-kicker">본인확인 완료</span>
-            <h1>본인확인이 완료되었습니다</h1>
-            <p><strong>{data.user?.name}</strong>님, 이제 수거함과의 거리를 확인할게요.</p>
+            <span className="card-kicker">로그인 완료</span>
+            <h1>학교 이메일이 확인되었습니다</h1>
+            <p><strong>{data.user?.email}</strong><br />이제 QR코드에 담긴 GPS 정보를 확인할게요.</p>
             <button className="button button-primary button-full" onClick={continueAfterIdentity}>
-              위치 확인으로 계속
+              QR·GPS 정보 확인으로 계속
             </button>
           </section>
         )}
@@ -422,8 +360,8 @@ export default function CheckInPage() {
           <section className="flow-card">
             <div className="card-heading">
               <span className="card-kicker">STEP 2 · 위치확인</span>
-              <h1>수거함 가까이에 계신가요?</h1>
-              <p>브라우저의 위치 권한을 허용하면 수거함까지의 거리를 계산합니다.</p>
+              <h1>QR코드의 GPS 정보를 확인할게요.</h1>
+              <p>이 QR에는 수거함 위치와 지오펜싱 범위가 함께 담겨 있습니다.</p>
             </div>
             <div className="spot-card">
               <div className="spot-pin" aria-hidden="true">◎</div>
@@ -435,70 +373,39 @@ export default function CheckInPage() {
             </div>
             <div className="privacy-note">
               <span aria-hidden="true">⌖</span>
-              <p>현재 위치는 거리 계산에만 사용되며 저장하거나 전송하지 않습니다.</p>
+              <p>시연에서는 QR에 포함된 위치 정보를 확인 완료로 처리하며 별도 위치 권한을 요청하지 않습니다.</p>
             </div>
-            <button className="button button-primary button-full" onClick={requestLocation}>
-              현재 위치 확인하기
+            <button className="button button-primary button-full" data-testid="verify-qr-location" onClick={verifyQrLocation}>
+              QR·GPS 정보 확인하기
             </button>
-            {showBetaTools && (
-              <button className="button button-test button-full" data-testid="test-location" onClick={useTestLocation}>
-                테스트 위치 사용
-                <small>개발·발표 전용</small>
-              </button>
-            )}
           </section>
         )}
 
         {stage === "locating" && (
           <section className="flow-card centered-card" role="status" aria-live="polite">
             <div className="radar" aria-hidden="true"><span /></div>
-            <span className="card-kicker">GPS 연결 중</span>
-            <h1>현재 위치를 확인하고 있습니다</h1>
-            <p>위치 확인에는 몇 초 정도 걸릴 수 있어요.</p>
+            <span className="card-kicker">QR 지오펜싱 확인 중</span>
+            <h1>QR의 GPS 정보를 확인하고 있습니다</h1>
+            <p>수거함 좌표와 인증 가능 범위를 확인하는 중이에요.</p>
           </section>
         )}
 
-        {stage === "locationResult" && spot && (
+        {stage === "locationResult" && spot && locationResult && (
           <section className="flow-card">
-            {locationError ? (
-              <>
-                <div className="centered-intro">
-                  <div className="status-symbol status-error" aria-hidden="true">!</div>
-                  <span className="card-kicker">위치 확인 실패</span>
-                  <h1>현재 위치를 확인하지 못했습니다</h1>
-                  <p>{locationError}</p>
-                </div>
-                <button className="button button-primary button-full" onClick={requestLocation}>위치 다시 확인</button>
-                {showBetaTools && (
-                  <button className="button button-test button-full" data-testid="test-location" onClick={useTestLocation}>
-                    테스트 위치 사용 <small>개발·발표 전용</small>
-                  </button>
-                )}
-              </>
-            ) : locationResult ? (
-              <>
-                <div className="centered-intro">
-                  <div className={`status-symbol ${locationResult.allowed ? "status-success" : "status-warning"}`} aria-hidden="true">
-                    {locationResult.allowed ? "✓" : "↗"}
-                  </div>
-                  <span className="card-kicker">위치 확인 완료</span>
-                  <h1>{locationResult.allowed ? "인증 가능한 위치입니다" : "수거함과 거리가 멀어요"}</h1>
-                  <p>{locationResult.allowed ? "사진 촬영을 진행해 주세요." : "수거함 가까이에서 다시 시도해주세요."}</p>
-                </div>
-                <dl className="result-list">
-                  <div><dt>수거함</dt><dd>{spot.shortName}</dd></div>
-                  <div><dt>수거함까지 거리</dt><dd className={locationResult.allowed ? "value-success" : "value-danger"}>{formatDistance(locationResult.distance)}</dd></div>
-                  <div><dt>인증 가능 범위</dt><dd>{spot.radiusMeters}m 이내</dd></div>
-                  <div><dt>GPS 정확도</dt><dd>±{Math.round(locationResult.accuracy)}m</dd></div>
-                  <div><dt>위치 방식</dt><dd>{locationResult.source === "test" ? "테스트 위치" : "실제 GPS"}</dd></div>
-                </dl>
-                {locationResult.allowed ? (
-                  <button className="button button-primary button-full" onClick={openCameraStep}>사진 촬영하기</button>
-                ) : (
-                  <button className="button button-primary button-full" onClick={requestLocation}>위치 다시 확인</button>
-                )}
-              </>
-            ) : null}
+            <div className="centered-intro">
+              <div className="status-symbol status-success" aria-hidden="true">✓</div>
+              <span className="card-kicker">위치 확인 완료</span>
+              <h1>GPS 정보가 확인되었습니다</h1>
+              <p>인증 가능한 수거함 QR입니다. 사진 촬영을 진행해 주세요.</p>
+            </div>
+            <dl className="result-list">
+              <div><dt>수거함</dt><dd>{spot.shortName}</dd></div>
+              <div><dt>QR GPS 위도</dt><dd>{locationResult.latitude}</dd></div>
+              <div><dt>QR GPS 경도</dt><dd>{locationResult.longitude}</dd></div>
+              <div><dt>지오펜싱 범위</dt><dd>{locationResult.radiusMeters}m 이내</dd></div>
+              <div><dt>검증 상태</dt><dd className="value-success">확인 완료</dd></div>
+            </dl>
+            <button className="button button-primary button-full" data-testid="open-camera-step" onClick={openCameraStep}>카메라 인증 시작</button>
           </section>
         )}
 

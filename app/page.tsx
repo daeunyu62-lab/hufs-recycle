@@ -1,6 +1,8 @@
 import { AppHeader } from "@/components/AppHeader";
 
-const DEMO_CHECK_IN_URL = "/check-in?spotId=HUFS-GLOBAL-001";
+import { buildBetaCheckInPath } from "@/lib/spots";
+
+const DEMO_CHECK_IN_URL = buildBetaCheckInPath();
 
 const steps = [
   {
